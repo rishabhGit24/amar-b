@@ -2,6 +2,11 @@
 Ingest Knowledge Base into RAG System
 Run this once to build the FAISS index
 """
+import os
+# Disable multiprocessing to avoid segmentation faults on macOS
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ['OMP_NUM_THREADS'] = '1'
+
 from services.rag_retriever import RAGPipeline
 from pathlib import Path
 import time
@@ -11,19 +16,36 @@ print("AMAR - Knowledge Base Ingestion")
 print("="*70)
 
 # Initialize RAG pipeline
-print("\n[1/3] Initializing RAG Pipeline...")
+print("\n[1/4] Initializing RAG Pipeline...")
 rag = RAGPipeline()
 
-# Knowledge base directory
-kb_dir = Path("knowledge_base")
+# Knowledge base directory - check both backend and temp_amar_repo
+backend_dir = Path(__file__).parent
+kb_dir = backend_dir / "knowledge_base"
+
+# If not found, try temp_amar_repo
+if not kb_dir.exists():
+    temp_repo_kb = backend_dir.parent / "temp_amar_repo" / "knowledge_base"
+    if temp_repo_kb.exists():
+        kb_dir = temp_repo_kb
+        print(f"Using knowledge base from temp_amar_repo: {kb_dir}")
 
 # Find all markdown files
-print("\n[2/3] Scanning knowledge base...")
+print(f"\n[2/4] Scanning knowledge base at {kb_dir}...")
+if not kb_dir.exists():
+    print(f"❌ Knowledge base directory not found: {kb_dir}")
+    print("Please ensure knowledge_base directory exists with .md files")
+    exit(1)
+
 md_files = list(kb_dir.rglob("*.md"))
 print(f"Found {len(md_files)} documents")
 
+if len(md_files) == 0:
+    print("❌ No markdown files found in knowledge base")
+    exit(1)
+
 # Ingest each file
-print("\n[3/3] Ingesting documents...")
+print("\n[3/4] Ingesting documents...")
 start_time = time.time()
 
 for i, file_path in enumerate(md_files, 1):
@@ -51,9 +73,10 @@ for i, file_path in enumerate(md_files, 1):
 
 elapsed_time = time.time() - start_time
 
-# Save the pipeline
-print("\nSaving RAG pipeline...")
-rag.save("amar_knowledge_base.pkl")
+# Save the pipeline to backend directory
+output_path = backend_dir / "amar_knowledge_base.pkl"
+print(f"\n[4/4] Saving RAG pipeline to {output_path}...")
+rag.save(str(output_path))
 
 # Summary
 print("\n" + "="*70)
@@ -62,6 +85,7 @@ print("="*70)
 print(f"Documents ingested: {len(md_files)}")
 print(f"Total chunks: {len(rag.retriever.chunks)}")
 print(f"Time taken: {elapsed_time:.2f} seconds")
-print(f"Saved to: amar_knowledge_base.pkl")
+print(f"Saved to: {output_path}")
+print(f"Index file: {output_path}.index")
 print("\n✅ Knowledge base is ready!")
 print("="*70)

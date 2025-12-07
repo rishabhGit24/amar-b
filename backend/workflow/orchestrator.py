@@ -414,19 +414,31 @@ class WorkflowOrchestrator:
                     'deployer',
                     {
                         'deployment_url': deployment_url,
+                        'project_location': project_dir,
                         'current_agent': 'deployer'
                     }
                 )
             else:
-                # Deployment failed
+                # Deployment failed - but don't fail the workflow, just log it
                 error_msg = '; '.join(response.errors)
                 await self._send_progress(
                     "deployer",
-                    "failed",
-                    "Deployment failed",
-                    error_msg
+                    "skipped",
+                    "Deployment skipped",
+                    f"Project files available at: {project_dir}"
                 )
-                return add_error_to_state(state, error_msg, 'deployer')
+                # Continue workflow with project location instead of deployment URL
+                return update_workflow_state(
+                    state,
+                    'deployer',
+                    {
+                        'deployment_url': None,
+                        'project_location': project_dir,
+                        'deployment_skipped': True,
+                        'deployment_error': error_msg,
+                        'current_agent': 'deployer'
+                    }
+                )
                 
         except Exception as e:
             error_msg = f"Deployer node error: {str(e)}"
@@ -501,7 +513,9 @@ class WorkflowOrchestrator:
             execution_time_ms = int((datetime.now() - started_at).total_seconds() * 1000)
             
             # Determine final status
-            if state.get('deployment_url'):
+            # Workflow is successful if we have deployment URL OR project location
+            # (deployment can be skipped but project generation is still successful)
+            if state.get('deployment_url') or state.get('project_location'):
                 final_status = 'completed'
             elif state.get('errors'):
                 final_status = 'failed'

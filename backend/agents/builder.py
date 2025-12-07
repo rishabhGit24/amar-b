@@ -58,12 +58,15 @@ class BuilderAgent:
                 if not self.settings.gemini_api_key:
                     raise ValueError("No API key configured. Set OPENAI_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY")
                 
+                # Use configured model or fallback to gemini-2.5-flash
+                model_name = self.settings.gemini_model or "gemini-2.5-flash"
+                # Use LangChain's default retry mechanism
                 self.llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.0-flash-exp",  # Available model
+                    model=model_name,
                     google_api_key=self.settings.gemini_api_key,
                     temperature=0.1,
                     max_tokens=8000,
-                    timeout=60
+                    timeout=90
                 )
                 self.use_custom_client = False
             except Exception as e:
@@ -93,12 +96,17 @@ class BuilderAgent:
         start_time = datetime.now()
         
         try:
+            # Log builder agent start
+            print(f"🔨 BUILDER: Starting code generation for {len(plan.pages)} page(s) and {len(plan.components)} component(s)")
+            
             # Get memory context for this session
             memory = memory_manager.get_memory(session_id)
             context = memory.get_context_for_agent('builder', max_entries=3)
             
             # Generate project files using LLM
+            print(f"🔨 BUILDER: Generating project files...")
             generated_files = self._generate_project_files(plan, context, session_id)
+            print(f"✓ BUILDER: Generated {len(generated_files)} files successfully")
             
             # Create file lineage tracking
             lineage = self._create_file_lineage(generated_files, session_id)
@@ -142,6 +150,9 @@ class BuilderAgent:
             
             execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
             
+            print(f"✓ BUILDER: Code generation completed in {execution_time}ms")
+            print(f"✓ BUILDER: Total files generated: {len(generated_files)}")
+            
             return AgentResponse(
                 agent_name='builder',
                 success=True,
@@ -173,38 +184,75 @@ class BuilderAgent:
         files = {}
         
         # Generate package.json
+        print(f"🔨 BUILDER: Generating package.json...")
         files['package.json'] = self._generate_package_json(plan)
+        print(f"  ✓ Generated: package.json")
         
         # Generate main App.tsx with routing
+        print(f"🔨 BUILDER: Generating core files (App.tsx, index.tsx, CSS)...")
         files['src/App.tsx'] = self._generate_app_component(plan)
+        print(f"  ✓ Generated: src/App.tsx")
         
         # Generate index.tsx entry point
         files['src/index.tsx'] = self._generate_index_file()
+        print(f"  ✓ Generated: src/index.tsx")
         
         # Generate CSS files
         files['src/index.css'] = self._generate_index_css()
         files['src/App.css'] = self._generate_app_css()
+        print(f"  ✓ Generated: CSS files")
         
         # Generate page components
-        for page in plan.pages:
-            page_file_path = f"src/pages/{page.name}.tsx"
-            files[page_file_path] = self._generate_page_component(page, plan, session_id)
+        if plan.pages:
+            print(f"🔨 BUILDER: Generating {len(plan.pages)} page component(s)...")
+            for i, page in enumerate(plan.pages, 1):
+                page_file_path = f"src/pages/{page.name}.tsx"
+                print(f"  [{i}/{len(plan.pages)}] Generating page: {page.name}...")
+                files[page_file_path] = self._generate_page_component(page, plan, session_id)
+                print(f"  ✓ Generated: {page_file_path}")
         
         # Generate shared components
-        for component in plan.components:
-            component_file_path = f"src/components/{component.name}.tsx"
-            files[component_file_path] = self._generate_component(component, plan, session_id)
+        if plan.components:
+            print(f"🔨 BUILDER: Generating {len(plan.components)} shared component(s)...")
+            for i, component in enumerate(plan.components, 1):
+                component_file_path = f"src/components/{component.name}.tsx"
+                print(f"  [{i}/{len(plan.components)}] Generating component: {component.name}...")
+                files[component_file_path] = self._generate_component(component, plan, session_id)
+                print(f"  ✓ Generated: {component_file_path}")
         
         # Generate backend logic if specified
         if plan.backend_logic:
+            print(f"🔨 BUILDER: Generating backend files...")
             backend_files = self._generate_backend_files(plan.backend_logic)
             files.update(backend_files)
+            print(f"✓ BUILDER: Generated {len(backend_files)} backend file(s)")
         
         # Generate basic test files
+        print(f"🔨 BUILDER: Generating test files...")
         files['src/App.test.tsx'] = self._generate_app_test()
+        print(f"  ✓ Generated: src/App.test.tsx")
         
         # Generate README
+        print(f"🔨 BUILDER: Generating README.md...")
         files['README.md'] = self._generate_readme(plan)
+        print(f"  ✓ Generated: README.md")
+        
+        # Generate public directory files (required for react-scripts build)
+        print(f"🔨 BUILDER: Generating public directory files...")
+        files['public/index.html'] = self._generate_index_html(plan)
+        files['public/manifest.json'] = self._generate_manifest_json(plan)
+        print(f"  ✓ Generated: public/index.html, public/manifest.json")
+        
+        # Generate .gitignore file
+        print(f"🔨 BUILDER: Generating .gitignore...")
+        files['.gitignore'] = self._generate_gitignore()
+        print(f"  ✓ Generated: .gitignore")
+        
+        # Generate deployment configuration files
+        print(f"🔨 BUILDER: Generating deployment config files...")
+        files['vercel.json'] = self._generate_vercel_config()
+        files['netlify.toml'] = self._generate_netlify_config()
+        print(f"  ✓ Generated: vercel.json, netlify.toml")
         
         return files
     
@@ -218,16 +266,23 @@ class BuilderAgent:
             "react": "^18.2.0",
             "react-dom": "^18.2.0",
             "react-router-dom": "^6.8.0",
+            "react-scripts": "5.0.1",
             "typescript": "^4.9.5",
             "@types/react": "^18.0.28",
-            "@types/react-dom": "^18.0.11"
+            "@types/react-dom": "^18.0.11",
+            "web-vitals": "^3.5.0"
         }
         
-        dev_dependencies = {}
+        dev_dependencies = {
+            "@testing-library/jest-dom": "^6.1.5",
+            "@testing-library/react": "^14.1.2",
+            "@testing-library/user-event": "^14.5.1",
+            "@types/jest": "^29.5.8"
+        }
         scripts = {
             "start": "react-scripts start",
             "build": "react-scripts build",
-            "test": "react-scripts test",
+            "test": "react-scripts test --run",
             "eject": "react-scripts eject"
         }
         
@@ -462,29 +517,13 @@ code {
             # Re-raise rate limit exceptions
             raise
         
-        # Retry with exponential backoff for transient errors
-        for attempt in range(self.settings.max_retry_attempts + 1):
-            try:
-                response_text = self._call_llm(prompt)
-                return self._extract_code_from_response(response_text)
-            except Exception as e:
-                error_msg = str(e).lower()
-                
-                # Check if this is a rate limit error from the API
-                is_rate_limit_error = any(keyword in error_msg for keyword in [
-                    'rate limit', 'quota', 'too many requests', '429'
-                ])
-                
-                # If this is the last attempt or not a rate limit error, fallback to template
-                if attempt >= self.settings.max_retry_attempts or not is_rate_limit_error:
-                    return self._generate_basic_page_template(page)
-                
-                # Wait before retrying with exponential backoff
-                if self.backoff.should_retry(attempt):
-                    self.backoff.wait(attempt)
-        
-        # Fallback to basic template if all retries failed
-        return self._generate_basic_page_template(page)
+        # Call LLM directly - let LangChain handle retries naturally
+        try:
+            response_text = self._call_llm(prompt)
+            return self._extract_code_from_response(response_text)
+        except Exception as e:
+            # Fallback to template if LLM call fails
+            return self._generate_basic_page_template(page)
     
     def _generate_component(self, component: ComponentSpec, plan: Plan, session_id: str) -> str:
         """
@@ -511,29 +550,13 @@ code {
             # Re-raise rate limit exceptions
             raise
         
-        # Retry with exponential backoff for transient errors
-        for attempt in range(self.settings.max_retry_attempts + 1):
-            try:
-                response_text = self._call_llm(prompt)
-                return self._extract_code_from_response(response_text)
-            except Exception as e:
-                error_msg = str(e).lower()
-                
-                # Check if this is a rate limit error from the API
-                is_rate_limit_error = any(keyword in error_msg for keyword in [
-                    'rate limit', 'quota', 'too many requests', '429'
-                ])
-                
-                # If this is the last attempt or not a rate limit error, fallback to template
-                if attempt >= self.settings.max_retry_attempts or not is_rate_limit_error:
-                    return self._generate_basic_component_template(component)
-                
-                # Wait before retrying with exponential backoff
-                if self.backoff.should_retry(attempt):
-                    self.backoff.wait(attempt)
-        
-        # Fallback to basic template if all retries failed
-        return self._generate_basic_component_template(component)
+        # Call LLM directly - let LangChain handle retries naturally
+        try:
+            response_text = self._call_llm(prompt)
+            return self._extract_code_from_response(response_text)
+        except Exception as e:
+            # Fallback to template if LLM call fails
+            return self._generate_basic_component_template(component)
     
     def _create_page_generation_prompt(self, page: PageSpec, plan: Plan) -> str:
         """
@@ -1190,6 +1213,144 @@ test('renders app without crashing', () => {
   expect(document.querySelector('.App')).toBeInTheDocument();
 });
 """
+    
+    def _generate_index_html(self, plan: Plan) -> str:
+        """Generate public/index.html file required by react-scripts"""
+        # Extract app name from first page or use default
+        app_name = plan.pages[0].name if plan.pages else "Generated App"
+        app_description = plan.pages[0].description if plan.pages and plan.pages[0].description else "A React application"
+        
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="{app_description}"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>{app_name}</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
+"""
+        return html_content
+    
+    def _generate_manifest_json(self, plan: Plan) -> str:
+        """Generate public/manifest.json file"""
+        import json
+        # Extract app name from first page or use default
+        app_name = plan.pages[0].name if plan.pages else "Generated App"
+        short_name = app_name[:12] if len(app_name) > 12 else app_name
+        
+        manifest = {
+            "short_name": short_name,
+            "name": app_name,
+            "icons": [
+                {
+                    "src": "favicon.ico",
+                    "sizes": "64x64 32x32 24x24 16x16",
+                    "type": "image/x-icon"
+                }
+            ],
+            "start_url": ".",
+            "display": "standalone",
+            "theme_color": "#000000",
+            "background_color": "#ffffff"
+        }
+        
+        return json.dumps(manifest, indent=2)
+    
+    def _generate_gitignore(self) -> str:
+        """Generate .gitignore file for React project"""
+        gitignore_content = """# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/build
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Vercel
+.vercel
+
+# Netlify
+.netlify
+"""
+        return gitignore_content
+    
+    def _generate_vercel_config(self) -> str:
+        """Generate vercel.json configuration for deployment"""
+        import json
+        # Simplified Vercel config for React apps - Vercel auto-detects React
+        # and uses the build command from package.json
+        vercel_config = {
+            "rewrites": [
+                {
+                    "source": "/(.*)",
+                    "destination": "/index.html"
+                }
+            ]
+        }
+        return json.dumps(vercel_config, indent=2)
+    
+    def _generate_netlify_config(self) -> str:
+        """Generate netlify.toml configuration for deployment"""
+        netlify_config = """[build]
+  command = "npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer-when-downgrade"
+
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+"""
+        return netlify_config
     
     def _generate_readme(self, plan: Plan) -> str:
         """

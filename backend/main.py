@@ -301,7 +301,7 @@ async def generate_application(request: UserRequest):
         try:
             rag_result = await rag_service.retrieve_context(
                 user_query=request.description.strip(),
-                top_k=5  # Retrieve top 5 relevant documents
+                top_k=3  # Retrieve top 3 relevant documents (reduced to limit token usage)
             )
             enriched_description = rag_result["enriched_query"]
         except Exception as rag_error:

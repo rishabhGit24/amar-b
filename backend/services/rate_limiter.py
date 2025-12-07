@@ -15,6 +15,59 @@ class RateLimitExceeded(Exception):
     pass
 
 
+class APIRateLimiter:
+    """
+    Global API rate limiter to prevent hitting API quotas
+    Tracks requests across all sessions and enforces minimum delays
+    """
+    
+    def __init__(self, min_delay_seconds: float = 3.0, max_requests_per_minute: int = 15):
+        """
+        Initialize API rate limiter
+        
+        Args:
+            min_delay_seconds: Minimum delay between API calls (default 3 seconds)
+            max_requests_per_minute: Maximum requests per minute (default 15 for free tier)
+        """
+        self.min_delay_seconds = min_delay_seconds
+        self.max_requests_per_minute = max_requests_per_minute
+        self._last_request_time: Optional[datetime] = None
+        self._request_times: list = []  # Track request times for rate limiting
+        self._lock = Lock()
+    
+    def wait_if_needed(self) -> None:
+        """Wait if necessary to respect rate limits"""
+        import time
+        with self._lock:
+            now = datetime.now()
+            
+            # Remove requests older than 1 minute
+            cutoff = now - timedelta(minutes=1)
+            self._request_times = [t for t in self._request_times if t > cutoff]
+            
+            # Check if we're at the rate limit
+            if len(self._request_times) >= self.max_requests_per_minute:
+                # Wait until the oldest request is 1 minute old
+                oldest = min(self._request_times)
+                wait_until = oldest + timedelta(minutes=1)
+                wait_seconds = (wait_until - now).total_seconds()
+                if wait_seconds > 0:
+                    print(f"⏳ Rate limit: {len(self._request_times)} requests in last minute. Waiting {wait_seconds:.1f}s...")
+                    time.sleep(wait_seconds)
+            
+            # Enforce minimum delay between requests
+            if self._last_request_time:
+                elapsed = (now - self._last_request_time).total_seconds()
+                if elapsed < self.min_delay_seconds:
+                    wait_time = self.min_delay_seconds - elapsed
+                    time.sleep(wait_time)
+                    now = datetime.now()
+            
+            # Record this request
+            self._last_request_time = now
+            self._request_times.append(now)
+
+
 class SessionRateLimiter:
     """
     Rate limiter for tracking LLM API calls per session
@@ -193,8 +246,22 @@ class ExponentialBackoff:
             time.sleep(delay)
 
 
-# Global rate limiter instance
+# Global rate limiter instances
 _rate_limiter: Optional[SessionRateLimiter] = None
+_api_rate_limiter: Optional[APIRateLimiter] = None
+
+
+def get_api_rate_limiter() -> APIRateLimiter:
+    """
+    Get global API rate limiter instance
+    
+    Returns:
+        APIRateLimiter instance
+    """
+    global _api_rate_limiter
+    if _api_rate_limiter is None:
+        _api_rate_limiter = APIRateLimiter(min_delay_seconds=3.0, max_requests_per_minute=15)
+    return _api_rate_limiter
 
 
 def get_rate_limiter(max_requests: int = 50) -> SessionRateLimiter:

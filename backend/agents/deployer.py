@@ -39,7 +39,11 @@ class DeployerAgent:
         self.error_handler = get_error_handler()
         self.graceful_failure = get_graceful_failure_handler()
         
-        # Platform availability flags
+        # Check CLI tool availability and install if needed
+        self.vercel_cli_available = self._ensure_cli_installed('vercel', 'npm install -g vercel')
+        self.netlify_cli_available = self._ensure_cli_installed('netlify', 'npm install -g netlify-cli')
+        
+        # Platform availability flags (require token - CLI will be installed if needed)
         self.vercel_available = bool(self.settings.vercel_token)
         self.netlify_available = bool(self.settings.netlify_token)
         
@@ -52,6 +56,76 @@ class DeployerAgent:
         # Track attempted platforms and errors for graceful failure handling
         self.attempted_platforms: List[str] = []
         self.platform_errors: Dict[str, str] = {}
+    
+    def _check_cli_available(self, tool_name: str) -> bool:
+        """Check if a CLI tool is available"""
+        try:
+            result = subprocess.run(
+                [tool_name, '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    
+    def _check_npm_available(self) -> bool:
+        """Check if npm is available"""
+        try:
+            result = subprocess.run(
+                ['npm', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    
+    def _ensure_cli_installed(self, tool_name: str, install_command: str) -> bool:
+        """Check if CLI tool is available, install if not"""
+        if self._check_cli_available(tool_name):
+            self.logger.info(f"{tool_name} CLI is already installed")
+            return True
+        
+        # Check if npm is available first
+        if not self._check_npm_available():
+            self.logger.error(f"Cannot install {tool_name} CLI: npm is not available. Please install Node.js and npm first.")
+            return False
+        
+        # Try to install the CLI tool
+        self.logger.info(f"{tool_name} CLI not found. Attempting to install via npm...")
+        try:
+            # Split install command into parts
+            install_parts = install_command.split()
+            result = subprocess.run(
+                install_parts,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minute timeout for installation
+            )
+            
+            if result.returncode == 0:
+                self.logger.info(f"Successfully installed {tool_name} CLI")
+                # Verify installation
+                if self._check_cli_available(tool_name):
+                    return True
+                else:
+                    self.logger.warning(f"{tool_name} CLI installed but not accessible. You may need to restart the server.")
+                    return False
+            else:
+                self.logger.error(f"Failed to install {tool_name} CLI: {result.stderr}")
+                if result.stdout:
+                    self.logger.error(f"Install output: {result.stdout}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Installation of {tool_name} CLI timed out")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error installing {tool_name} CLI: {str(e)}")
+            return False
     
     def deploy_project(self, project: GeneratedProject, project_dir: str) -> AgentResponse:
         """
@@ -71,34 +145,6 @@ class DeployerAgent:
         try:
             # Get memory context for this session
             memory = memory_manager.get_memory(project.session_id)
-            
-            # Check if mock deployment is enabled
-            if self.settings.mock_deployment:
-                self.logger.info("Mock deployment mode enabled - generating mock URL")
-                deployment_url = f"https://mock-deployment-{project.session_id[:8]}.vercel.app"
-                platform = "vercel (mock)"
-                
-                memory.add_entry(
-                    agent='deployer',
-                    action='mock_deployment',
-                    data={'url': deployment_url, 'platform': platform},
-                    tags=['deployment', 'mock'],
-                    importance=0.8
-                )
-                
-                execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
-                
-                return AgentResponse(
-                    agent_name='deployer',
-                    success=True,
-                    output={
-                        'deployment_url': deployment_url,
-                        'platform': platform,
-                        'mock': True
-                    },
-                    errors=[],
-                    execution_time_ms=execution_time
-                )
             
             # Try to deploy to available platforms with fallback
             deployment_url = None
@@ -165,17 +211,33 @@ class DeployerAgent:
                         importance=0.7
                     )
             
-            # If no platform succeeded, create graceful error message
+            # If no platform succeeded, raise error with helpful message
             if not deployment_url:
-                error_message = self.graceful_failure.handle_deployment_platform_unavailable(
-                    self.attempted_platforms,
-                    self.platform_errors
-                )
+                error_message = "Deployment failed: No deployment platforms available.\n\n"
+                
+                if not self.settings.vercel_token and not self.settings.netlify_token:
+                    error_message += "Please configure at least one deployment token:\n"
+                    error_message += "- Set VERCEL_TOKEN environment variable for Vercel deployment\n"
+                    error_message += "- Set NETLIFY_TOKEN environment variable for Netlify deployment\n"
+                elif not self.vercel_cli_available and not self.netlify_cli_available:
+                    error_message += "CLI tools installation failed. Please install manually:\n"
+                    error_message += "- npm install -g vercel (for Vercel)\n"
+                    error_message += "- npm install -g netlify-cli (for Netlify)\n"
+                else:
+                    error_message += self.graceful_failure.handle_deployment_platform_unavailable(
+                        self.attempted_platforms,
+                        self.platform_errors
+                    )
+                
                 raise DeploymentError(
                     error_message,
                     details={
                         'attempted_platforms': self.attempted_platforms,
-                        'platform_errors': self.platform_errors
+                        'platform_errors': self.platform_errors,
+                        'vercel_token_set': bool(self.settings.vercel_token),
+                        'netlify_token_set': bool(self.settings.netlify_token),
+                        'vercel_cli_available': self.vercel_cli_available,
+                        'netlify_cli_available': self.netlify_cli_available
                     },
                     recoverable=False
                 )
@@ -220,7 +282,8 @@ class DeployerAgent:
                 output={
                     'deployment_url': deployment_url,
                     'platform': platform,
-                    'deployment_details': deployment_details
+                    'deployment_details': deployment_details,
+                    'project_location': project_dir
                 },
                 errors=[],
                 execution_time_ms=execution_time
@@ -327,6 +390,19 @@ class DeployerAgent:
             os.chdir(project_dir)
             
             try:
+                # Ensure dependencies are installed before deployment
+                self.logger.info("Installing npm dependencies before deployment...")
+                install_result = subprocess.run(
+                    ['npm', 'install'],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                if install_result.returncode != 0:
+                    self.logger.warning(f"npm install had warnings: {install_result.stderr}")
+                    # Continue anyway as Vercel will install dependencies during build
+                
                 # Deploy using Vercel CLI with token authentication
                 # --yes flag skips prompts
                 # --prod flag deploys to production
@@ -424,7 +500,19 @@ class DeployerAgent:
             os.chdir(project_dir)
             
             try:
-                # First, build the project
+                # Ensure dependencies are installed before building
+                self.logger.info("Installing npm dependencies before build...")
+                install_result = subprocess.run(
+                    ['npm', 'install'],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                if install_result.returncode != 0:
+                    raise RuntimeError(f"npm install failed: {install_result.stderr}")
+                
+                # Build the project
                 build_command = ['npm', 'run', 'build']
                 
                 build_result = subprocess.run(
@@ -438,15 +526,17 @@ class DeployerAgent:
                     raise RuntimeError(f"Build failed: {build_result.stderr}")
                 
                 # Deploy using Netlify CLI with token authentication
+                # Set token as environment variable for Netlify CLI
+                env = os.environ.copy()
+                env['NETLIFY_AUTH_TOKEN'] = self.settings.netlify_token
+                
                 # --prod flag deploys to production
                 # --dir flag specifies build directory
-                # --auth flag provides authentication
                 deploy_command = [
                     'netlify',
                     'deploy',
                     '--prod',
-                    '--dir=build',
-                    f'--auth={self.settings.netlify_token}'
+                    '--dir=build'
                 ]
                 
                 # Log deployment initiation
@@ -462,12 +552,13 @@ class DeployerAgent:
                     importance=0.7
                 )
                 
-                # Execute deployment command
+                # Execute deployment command with environment variables
                 result = subprocess.run(
                     deploy_command,
                     capture_output=True,
                     text=True,
-                    timeout=self.deployment_timeout
+                    timeout=self.deployment_timeout,
+                    env=env
                 )
                 
                 if result.returncode != 0:
@@ -515,30 +606,24 @@ class DeployerAgent:
         Ensure Vercel CLI is installed
         
         Raises:
-            RuntimeError: If Vercel CLI is not installed
+            DeploymentError: If Vercel CLI cannot be installed or accessed
         """
-        try:
-            result = subprocess.run(
-                ['vercel', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode != 0:
-                raise RuntimeError("Vercel CLI is not properly installed")
-                
-        except FileNotFoundError:
+        if not self.vercel_cli_available:
+            # Try to install it now
+            if not self._ensure_cli_installed('vercel', 'npm install -g vercel'):
+                raise DeploymentError(
+                    "Vercel CLI is not installed and could not be installed automatically. "
+                    "Please install manually: npm install -g vercel",
+                    details={'platform': 'vercel', 'issue': 'cli_not_installed'},
+                    recoverable=False
+                )
+        
+        # Verify CLI is accessible
+        if not self._check_cli_available('vercel'):
             raise DeploymentError(
-                "Vercel CLI is not installed. Install it with: npm install -g vercel",
-                details={'platform': 'vercel', 'issue': 'cli_not_installed'},
+                "Vercel CLI is not accessible. Please verify installation: npm install -g vercel",
+                details={'platform': 'vercel', 'issue': 'cli_not_accessible'},
                 recoverable=False
-            )
-        except subprocess.TimeoutExpired:
-            raise DeploymentError(
-                "Vercel CLI check timed out",
-                details={'platform': 'vercel', 'issue': 'cli_check_timeout'},
-                recoverable=True
             )
     
     def _ensure_netlify_cli_installed(self) -> None:
@@ -546,30 +631,24 @@ class DeployerAgent:
         Ensure Netlify CLI is installed
         
         Raises:
-            RuntimeError: If Netlify CLI is not installed
+            DeploymentError: If Netlify CLI cannot be installed or accessed
         """
-        try:
-            result = subprocess.run(
-                ['netlify', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode != 0:
-                raise RuntimeError("Netlify CLI is not properly installed")
-                
-        except FileNotFoundError:
+        if not self.netlify_cli_available:
+            # Try to install it now
+            if not self._ensure_cli_installed('netlify', 'npm install -g netlify-cli'):
+                raise DeploymentError(
+                    "Netlify CLI is not installed and could not be installed automatically. "
+                    "Please install manually: npm install -g netlify-cli",
+                    details={'platform': 'netlify', 'issue': 'cli_not_installed'},
+                    recoverable=False
+                )
+        
+        # Verify CLI is accessible
+        if not self._check_cli_available('netlify'):
             raise DeploymentError(
-                "Netlify CLI is not installed. Install it with: npm install -g netlify-cli",
-                details={'platform': 'netlify', 'issue': 'cli_not_installed'},
+                "Netlify CLI is not accessible. Please verify installation: npm install -g netlify-cli",
+                details={'platform': 'netlify', 'issue': 'cli_not_accessible'},
                 recoverable=False
-            )
-        except subprocess.TimeoutExpired:
-            raise DeploymentError(
-                "Netlify CLI check timed out",
-                details={'platform': 'netlify', 'issue': 'cli_check_timeout'},
-                recoverable=True
             )
     
     def _extract_vercel_url(self, output: str) -> Optional[str]:
@@ -782,5 +861,7 @@ class DeployerAgent:
         return {
             'vercel': self.vercel_available,
             'netlify': self.netlify_available,
+            'vercel_cli': self.vercel_cli_available,
+            'netlify_cli': self.netlify_cli_available,
             'any_available': self.vercel_available or self.netlify_available
         }

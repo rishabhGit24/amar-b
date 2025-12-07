@@ -64,12 +64,15 @@ class PlannerAgent:
                         recoverable=False
                     )
                 
+                # Use configured model or fallback to gemini-2.5-flash
+                model_name = self.settings.gemini_model or "gemini-2.5-flash"
+                # Use LangChain's default retry mechanism
                 self.llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.0-flash-exp",  # Available model
+                    model=model_name,
                     google_api_key=self.settings.gemini_api_key,
                     temperature=0.3,
                     max_tokens=4000,
-                    timeout=30
+                    timeout=60
                 )
                 self.use_custom_client = False
             except Exception as e:
@@ -215,54 +218,27 @@ class PlannerAgent:
         # Create structured prompt for plan generation
         prompt = self._create_planning_prompt(description, context)
         
-        # Retry with exponential backoff for transient errors
-        last_exception = None
-        for attempt in range(self.settings.max_retry_attempts + 1):
-            try:
-                # Call LLM (OpenAI, Groq, or Gemini)
-                if self.use_custom_client:
-                    response_text = self.llm_client.generate_content(prompt, temperature=0.3, max_tokens=4000)
-                else:
-                    response = self.llm.invoke(prompt)
-                    response_text = response.content
-                
-                # Parse JSON response
-                plan_json = self._extract_json_from_response(response_text)
-                
-                return plan_json
-                
-            except Exception as e:
-                last_exception = e
-                error_msg = str(e).lower()
-                
-                # Check if this is a rate limit error from the API
-                is_rate_limit_error = any(keyword in error_msg for keyword in [
-                    'rate limit', 'quota', 'too many requests', '429'
-                ])
-                
-                # If this is the last attempt or not a rate limit error, raise immediately
-                if attempt >= self.settings.max_retry_attempts or not is_rate_limit_error:
-                    raise LLMAPIError(
-                        f"LLM plan generation failed: {str(e)}",
-                        details={
-                            'agent': 'planner',
-                            'attempt': attempt,
-                            'error_type': type(e).__name__
-                        },
-                        recoverable=False
-                    )
-                
-                # Wait before retrying with exponential backoff
-                if self.backoff.should_retry(attempt):
-                    self.backoff.wait(attempt)
-        
-        # Should never reach here, but raise last exception if we do
-        if last_exception:
+        # Call LLM directly - let LangChain handle retries naturally
+        try:
+            # Call LLM (OpenAI, Groq, or Gemini)
+            if self.use_custom_client:
+                response_text = self.llm_client.generate_content(prompt, temperature=0.3, max_tokens=4000)
+            else:
+                response = self.llm.invoke(prompt)
+                response_text = response.content
+            
+            # Parse JSON response
+            plan_json = self._extract_json_from_response(response_text)
+            
+            return plan_json
+            
+        except Exception as e:
+            # If LLM call fails, raise error immediately
             raise LLMAPIError(
-                f"LLM plan generation failed after {self.settings.max_retry_attempts} retries: {str(last_exception)}",
+                f"LLM plan generation failed: {str(e)}",
                 details={
                     'agent': 'planner',
-                    'max_retries': self.settings.max_retry_attempts
+                    'error_type': type(e).__name__
                 },
                 recoverable=False
             )

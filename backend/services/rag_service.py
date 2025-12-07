@@ -29,25 +29,34 @@ class RAGService:
         Initialize RAG service.
         
         Args:
-            knowledge_base_path: Path to the knowledge base
+            knowledge_base_path: Path to the knowledge base (without .index extension)
         """
-        self.knowledge_base_path = knowledge_base_path or "amar_knowledge_base.pkl"
+        import os
+        from pathlib import Path
+        
+        # Default to backend directory
+        if knowledge_base_path is None:
+            backend_dir = Path(__file__).parent.parent
+            self.knowledge_base_path = str(backend_dir / "amar_knowledge_base.pkl")
+        else:
+            self.knowledge_base_path = knowledge_base_path
+        
         self.is_enabled = False
         self.rag_pipeline = None
         
         # Try to load RAG pipeline
         try:
-            import os
-            if os.path.exists(self.knowledge_base_path):
+            index_file = f"{self.knowledge_base_path}.index"
+            if os.path.exists(self.knowledge_base_path) and os.path.exists(index_file):
                 from services.rag_retriever import RAGPipeline
                 self.rag_pipeline = RAGPipeline()
                 self.rag_pipeline.load(self.knowledge_base_path)
                 self.is_enabled = True
                 logger.info(f"RAG Service initialized with {len(self.rag_pipeline.retriever.chunks)} chunks")
             else:
-                logger.info(f"RAG Service: No index found at {self.knowledge_base_path}")
+                logger.info(f"RAG Service: No index found at {self.knowledge_base_path} (or {index_file})")
         except Exception as e:
-            logger.error(f"RAG Service initialization failed: {e}")
+            logger.error(f"RAG Service initialization failed: {e}", exc_info=True)
         
         if not self.is_enabled:
             logger.info("RAG Service initialized (enabled: False)")
@@ -55,7 +64,7 @@ class RAGService:
     async def retrieve_context(
         self,
         user_query: str,
-        top_k: int = 5,
+        top_k: int = 3,  # Reduced from 5 to 3 to limit context size
         filters: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -131,7 +140,7 @@ class RAGService:
     
     def _enrich_query(self, original_query: str, retrieved_docs: List[Dict]) -> str:
         """
-        Enrich user query with retrieved context.
+        Enrich user query with retrieved context - optimized to reduce token usage.
         
         Args:
             original_query: Original user input
@@ -143,20 +152,28 @@ class RAGService:
         if not retrieved_docs:
             return original_query
         
-        # Format retrieved context
+        # Limit to top 2 most relevant chunks and truncate long content
+        MAX_CHUNK_LENGTH = 500  # Limit each chunk to ~500 chars
+        MAX_CHUNKS = 2  # Only use top 2 most relevant
+        
         context_parts = []
-        for i, doc in enumerate(retrieved_docs, 1):
-            context_parts.append(f"[Context {i}]: {doc.get('content', '')}")
+        for i, doc in enumerate(retrieved_docs[:MAX_CHUNKS], 1):
+            content = doc.get('content', '')
+            # Truncate if too long
+            if len(content) > MAX_CHUNK_LENGTH:
+                content = content[:MAX_CHUNK_LENGTH] + "..."
+            relevance = doc.get('relevance', 0.0)
+            context_parts.append(f"[Context {i} - Relevance: {relevance:.2f}]: {content}")
         
         context_str = "\n".join(context_parts)
         
-        # Combine original query with context
+        # Shorter, more concise enriched query
         enriched = f"""User Request: {original_query}
 
-Relevant Context from Knowledge Base:
+Relevant Context:
 {context_str}
 
-Please use the above context to better understand the user's requirements and generate an appropriate application plan."""
+Use this context to inform your planning."""
         
         return enriched
     
@@ -190,11 +207,27 @@ Please use the above context to better understand the user's requirements and ge
         Call this method once the RAG-FAISS system is ready to be integrated.
         
         Args:
-            knowledge_base_path: Path to the knowledge base
+            knowledge_base_path: Path to the knowledge base (without .index extension)
         """
+        import os
         self.knowledge_base_path = knowledge_base_path
-        self.is_enabled = True
-        logger.info(f"RAG-FAISS enabled with knowledge base: {knowledge_base_path}")
+        
+        # Try to load the index
+        try:
+            index_file = f"{knowledge_base_path}.index"
+            if os.path.exists(knowledge_base_path) and os.path.exists(index_file):
+                from services.rag_retriever import RAGPipeline
+                if self.rag_pipeline is None:
+                    self.rag_pipeline = RAGPipeline()
+                self.rag_pipeline.load(knowledge_base_path)
+                self.is_enabled = True
+                logger.info(f"RAG-FAISS enabled with {len(self.rag_pipeline.retriever.chunks)} chunks from: {knowledge_base_path}")
+            else:
+                logger.warning(f"RAG-FAISS index not found at {knowledge_base_path} or {index_file}")
+                self.is_enabled = False
+        except Exception as e:
+            logger.error(f"Failed to enable RAG-FAISS: {e}", exc_info=True)
+            self.is_enabled = False
     
     def disable_rag(self):
         """Disable RAG-FAISS system (fallback to direct query processing)"""
