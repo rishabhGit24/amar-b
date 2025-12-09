@@ -397,27 +397,55 @@ class WorkflowOrchestrator:
             response = self.deployer.deploy_project(project, project_dir)
             
             if response.success:
-                # Extract deployment URL
+                # Extract deployment URL and check if manual deployment is required
                 deployment_url = response.output.get('deployment_url')
+                manual_deployment_required = response.output.get('manual_deployment_required', False)
+                manual_instructions = response.output.get('deployment_details', {}).get('instructions', '')
                 
-                # Send completion update
-                await self._send_progress(
-                    "deployer",
-                    "completed",
-                    "Application deployed successfully",
-                    f"URL: {deployment_url}"
-                )
-                
-                # Update state with deployment URL
-                return update_workflow_state(
-                    state,
-                    'deployer',
-                    {
-                        'deployment_url': deployment_url,
-                        'project_location': project_dir,
-                        'current_agent': 'deployer'
-                    }
-                )
+                if manual_deployment_required:
+                    # Manual deployment required (npm not available)
+                    await self._send_progress(
+                        "deployer",
+                        "completed",
+                        "Project ready for manual deployment",
+                        manual_instructions
+                    )
+                    
+                    # Update state without deployment URL
+                    return update_workflow_state(
+                        state,
+                        'deployer',
+                        {
+                            'deployment_url': None,
+                            'project_location': project_dir,
+                            'manual_deployment_required': True,
+                            'current_agent': 'deployer'
+                        }
+                    )
+                else:
+                    # Automatic deployment succeeded
+                    completion_msg = f"🌐 Deployment URL: {deployment_url}\n"
+                    completion_msg += f"📁 Project Files: {project_dir}\n"
+                    completion_msg += f"\nYou can access your deployed app at the URL above,"
+                    completion_msg += f"\nor manually deploy the files from the project directory."
+                    
+                    await self._send_progress(
+                        "deployer",
+                        "completed",
+                        "Application deployed successfully",
+                        completion_msg
+                    )
+                    
+                    # Update state with deployment URL
+                    return update_workflow_state(
+                        state,
+                        'deployer',
+                        {
+                            'deployment_url': deployment_url,
+                            'project_location': project_dir,
+                            'current_agent': 'deployer'
+                        }
+                    )
             else:
                 # Deployment failed - but don't fail the workflow, just log it
                 error_msg = '; '.join(response.errors)
@@ -525,12 +553,30 @@ class WorkflowOrchestrator:
             # Finalize state
             state = finalize_workflow_state(state, final_status, execution_time_ms)
             
+            # Prepare final message with file location
+            project_location = state.get('agent_context', {}).get('project_dir', 'Unknown')
+            deployment_url = state.get('deployment_url')
+            manual_deployment_required = state.get('manual_deployment_required', False)
+            
+            final_message = f"Workflow {final_status}\n"
+            final_message += f"Total execution time: {execution_time_ms}ms\n"
+            final_message += f"\n📁 Generated Files Location:\n{project_location}\n"
+            
+            if deployment_url:
+                final_message += f"\n🌐 Deployment URL:\n{deployment_url}"
+            elif manual_deployment_required:
+                final_message += f"\n⚠️ Manual deployment required (npm not available)"
+                final_message += f"\nSee deployment instructions above for how to deploy your project."
+            else:
+                final_message += f"\n⚠️ Automatic deployment was not available"
+                final_message += f"\nYou can manually deploy the files from the project directory."
+            
             # Send progress update
             await self._send_progress(
                 "finalize",
                 "completed" if final_status == "completed" else "failed",
                 f"Workflow {final_status}",
-                f"Total execution time: {execution_time_ms}ms"
+                final_message
             )
             
             # Log workflow completion

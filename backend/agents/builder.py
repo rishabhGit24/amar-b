@@ -248,6 +248,11 @@ class BuilderAgent:
         files['.gitignore'] = self._generate_gitignore()
         print(f"  ✓ Generated: .gitignore")
         
+        # Generate TypeScript configuration
+        print(f"🔨 BUILDER: Generating tsconfig.json...")
+        files['tsconfig.json'] = self._generate_tsconfig()
+        print(f"  ✓ Generated: tsconfig.json")
+        
         # Generate deployment configuration files
         print(f"🔨 BUILDER: Generating deployment config files...")
         files['vercel.json'] = self._generate_vercel_config()
@@ -260,24 +265,26 @@ class BuilderAgent:
         """
         Generate package.json with required dependencies
         
+        Uses latest stable versions to avoid deprecation warnings during deployment.
+        
         Validates: Requirements 13.2
         """
         dependencies = {
-            "react": "^18.2.0",
-            "react-dom": "^18.2.0",
-            "react-router-dom": "^6.8.0",
+            "react": "^18.3.1",
+            "react-dom": "^18.3.1",
+            "react-router-dom": "^6.26.0",
             "react-scripts": "5.0.1",
-            "typescript": "^4.9.5",
-            "@types/react": "^18.0.28",
-            "@types/react-dom": "^18.0.11",
-            "web-vitals": "^3.5.0"
+            "typescript": "^5.5.4",
+            "@types/react": "^18.3.5",
+            "@types/react-dom": "^18.3.0",
+            "web-vitals": "^4.2.3"
         }
         
         dev_dependencies = {
-            "@testing-library/jest-dom": "^6.1.5",
-            "@testing-library/react": "^14.1.2",
-            "@testing-library/user-event": "^14.5.1",
-            "@types/jest": "^29.5.8"
+            "@testing-library/jest-dom": "^6.5.0",
+            "@testing-library/react": "^16.0.1",
+            "@testing-library/user-event": "^14.5.2",
+            "@types/jest": "^29.5.12"
         }
         scripts = {
             "start": "react-scripts start",
@@ -386,11 +393,11 @@ export default App;
         return app_component
     
     def _generate_index_file(self) -> str:
-        """Generate index.tsx entry point"""
+        """Generate index.tsx entry point with proper TypeScript imports"""
         return """import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import App from './App';
+import App from './App.tsx';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
@@ -748,6 +755,15 @@ Description: {component.description}
 {props_info}
 {backend_info}
 
+CRITICAL DEPLOYMENT REQUIREMENTS:
+- Write PRODUCTION-READY code that will deploy successfully on Vercel/Netlify
+- Use ONLY modern, stable React patterns (React 18+)
+- Avoid deprecated APIs and patterns
+- Use native browser APIs instead of deprecated polyfills
+- Write clean, minimal code without unnecessary dependencies
+- Ensure all imports are from stable, maintained packages
+- Follow React best practices for performance and accessibility
+
 Requirements:
 - Use TypeScript with proper interface definitions for props
 - Create a reusable, well-structured component
@@ -766,6 +782,20 @@ Component Structure:
 - Use semantic HTML elements
 - Include proper error handling for props
 {"- Include form submission handler with API call" if backend_info else ""}
+
+CODE QUALITY STANDARDS:
+- No console warnings or errors
+- No deprecated React patterns (e.g., no legacy context API)
+- Use modern React hooks (useState, useEffect, useCallback, useMemo)
+- Proper TypeScript types (no 'any' types)
+- Clean, readable code with proper indentation
+- Minimal dependencies - use native browser APIs when possible
+
+CRITICAL IMPORT RULES:
+- ALWAYS include .tsx extension in imports: import Component from './Component.tsx'
+- For components: import Header from '../components/Header.tsx'
+- For pages: import HomePage from './pages/HomePage.tsx'
+- This prevents "Module not found" errors during build
 
 Return ONLY the TypeScript React component code, no explanations or markdown formatting.
 """
@@ -1268,6 +1298,34 @@ test('renders app without crashing', () => {
         
         return json.dumps(manifest, indent=2)
     
+    def _generate_tsconfig(self) -> str:
+        """Generate tsconfig.json with proper module resolution for React"""
+        import json
+        tsconfig = {
+            "compilerOptions": {
+                "target": "ES2020",
+                "lib": ["ES2020", "DOM", "DOM.Iterable"],
+                "jsx": "react-jsx",
+                "module": "ESNext",
+                "moduleResolution": "bundler",
+                "resolveJsonModule": True,
+                "allowImportingTsExtensions": True,
+                "allowSyntheticDefaultImports": True,
+                "esModuleInterop": True,
+                "forceConsistentCasingInFileNames": True,
+                "strict": True,
+                "skipLibCheck": True,
+                "noEmit": True,
+                "isolatedModules": True,
+                "noUnusedLocals": True,
+                "noUnusedParameters": True,
+                "noFallthroughCasesInSwitch": True
+            },
+            "include": ["src"],
+            "references": [{"path": "./tsconfig.node.json"}]
+        }
+        return json.dumps(tsconfig, indent=2)
+    
     def _generate_gitignore(self) -> str:
         """Generate .gitignore file for React project"""
         gitignore_content = """# Dependencies
@@ -1537,11 +1595,11 @@ This application was generated automatically based on the following plan:
     
     def write_files_to_directory(self, files: Dict[str, str], base_dir: Optional[str] = None) -> str:
         """
-        Write generated files to temporary directory
+        Write generated files to user-accessible directory
         
         Args:
             files: Dictionary mapping file paths to file contents
-            base_dir: Optional base directory (uses temp dir if not provided)
+            base_dir: Optional base directory (uses generated_projects if not provided)
             
         Returns:
             Path to the directory containing the files
@@ -1549,10 +1607,18 @@ This application was generated automatically based on the following plan:
         Validates: Requirements 3.3
         """
         if base_dir is None:
-            # Create temporary directory
-            base_dir = tempfile.mkdtemp(prefix="amar_project_")
+            # Create user-accessible directory in project root
+            # Use generated_projects folder so users can easily find their files
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            generated_dir = os.path.join(project_root, 'generated_projects')
+            os.makedirs(generated_dir, exist_ok=True)
+            
+            # Create timestamped project directory
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            base_dir = os.path.join(generated_dir, f'amar_project_{timestamp}')
         
         base_path = os.path.abspath(base_dir)
+        os.makedirs(base_path, exist_ok=True)
         
         for file_path, content in files.items():
             full_path = os.path.join(base_path, file_path)
@@ -1563,6 +1629,9 @@ This application was generated automatically based on the following plan:
             # Write file content
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
+        
+        print(f"📁 Files saved to: {base_path}")
+        print(f"   You can find your generated project at this location!")
         
         return base_path
     

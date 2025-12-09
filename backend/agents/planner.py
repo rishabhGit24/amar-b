@@ -268,6 +268,13 @@ You are a web application planner. Analyze the user's request and create a detai
 
 User Request: "{description}"
 
+CRITICAL DEPLOYMENT CONTEXT:
+- This application will be deployed to Vercel/Netlify automatically
+- Code must be production-ready with NO build errors or warnings
+- Use ONLY modern, stable dependencies (React 18+, TypeScript 4.9+)
+- Avoid deprecated packages and patterns
+- Follow current React best practices
+
 IMPORTANT CONSTRAINTS:
 - Maximum 5 pages allowed
 - Generate React components with TypeScript
