@@ -379,6 +379,40 @@ function App() {
                 </div>
               )}
 
+              {/* Download Project Button */}
+              {sessionId && (
+                <div className="mb-6">
+                  <button
+                    onClick={() => {
+                      const downloadUrl = getApiEndpoint(
+                        `/api/download/${sessionId}`
+                      );
+                      window.location.href = downloadUrl;
+                    }}
+                    className="w-full inline-flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                  >
+                    <svg
+                      className="mr-2 w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                      />
+                    </svg>
+                    <span>Download Project Files</span>
+                  </button>
+                  <p className="mt-2 text-xs text-gray-500 text-center">
+                    Download the complete project as a ZIP file to customize or
+                    deploy manually
+                  </p>
+                </div>
+              )}
+
               {!result.success && result.error && (
                 <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
                   <p className="text-sm text-red-800">

@@ -58,8 +58,8 @@ class BuilderAgent:
                 if not self.settings.gemini_api_key:
                     raise ValueError("No API key configured. Set OPENAI_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY")
                 
-                # Use configured model or fallback to gemini-2.5-flash
-                model_name = self.settings.gemini_model or "gemini-2.5-flash"
+                # Use configured model or fallback to gemini-2.5-flash-lite
+                model_name = self.settings.gemini_model or "gemini-2.5-flash-lite"
                 # Use LangChain's default retry mechanism
                 self.llm = ChatGoogleGenerativeAI(
                     model=model_name,
@@ -621,35 +621,178 @@ const handleSubmit = async (data: FormData) => {{
 ```
 """
         
+        # Generate example imports for clarity
+        example_imports = '\n'.join([f"import {comp} from '../components/{comp}.tsx';" for comp in components_list])
+        
         prompt = f"""
-Generate a React TypeScript functional component for a page with the following specifications:
+Generate a BEAUTIFUL, PRODUCTION-READY React TypeScript page component.
 
-Page Name: {page.name}
-Route: {page.route}
+Page: {page.name} | Route: {page.route}
 Description: {page.description}
-Required Components: {', '.join(components_list)}
+Components to use: {', '.join(components_list)}
 {backend_info}
 
-Requirements:
-- Use TypeScript with proper type definitions
-- Import and use the specified components: {', '.join(components_list)}
-- Create a well-structured, semantic HTML layout
-- Include proper CSS classes for styling
-- Make the component responsive and accessible
-- Add meaningful content based on the page description
-{"- Integrate with backend API endpoints as specified above" if backend_info else ""}
-{"- Include form handling with API calls if this is a form page" if backend_info else ""}
+═══════════════════════════════════════════════════════════════════════════════
+🚨 CRITICAL FILE STRUCTURE (MEMORIZE THIS):
+═══════════════════════════════════════════════════════════════════════════════
 
-Component Structure:
-- Import React and required components (including useState, useEffect if needed)
-- Define the functional component with proper TypeScript typing
-- Export as default
-- Use semantic HTML elements (header, main, section, etc.)
-- Include navigation if this is not the home page
-{"- Add state management for API data and loading states" if backend_info else ""}
-{"- Include error handling and user feedback" if backend_info else ""}
+THIS FILE LOCATION: src/pages/{page.name}.tsx
+COMPONENTS LOCATION: src/components/ComponentName.tsx
 
-Return ONLY the TypeScript React component code, no explanations or markdown formatting.
+CORRECT IMPORT PATH: '../components/ComponentName.tsx'
+❌ WRONG: './ComponentName.tsx' (same directory - WRONG!)
+❌ WRONG: './ComponentName' (missing extension - WRONG!)
+✅ CORRECT: '../components/ComponentName.tsx'
+
+EXACT IMPORTS TO USE:
+```typescript
+import React from 'react';
+{example_imports}
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+🎨 STYLING REQUIREMENTS - MAKE IT STUNNING:
+═══════════════════════════════════════════════════════════════════════════════
+
+USE INLINE STYLES WITH MODERN DESIGN:
+
+1. HERO SECTION (Top of page):
+```typescript
+<div style={{{{
+  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  color: 'white',
+  padding: '100px 20px',
+  textAlign: 'center' as const,
+  minHeight: '500px',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  justifyContent: 'center' as const,
+  alignItems: 'center' as const
+}}}}>
+  <h1 style={{{{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '24px', textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}}}>
+    Amazing Title
+  </h1>
+  <p style={{{{ fontSize: '1.5rem', maxWidth: '700px', lineHeight: '1.8', opacity: 0.95 }}}}>
+    Compelling description that engages users
+  </p>
+</div>
+```
+
+2. CONTENT SECTIONS:
+```typescript
+<section style={{{{
+  padding: '80px 20px',
+  maxWidth: '1200px',
+  margin: '0 auto',
+  background: '#ffffff'
+}}}}>
+  <h2 style={{{{ 
+    fontSize: '3rem', 
+    textAlign: 'center' as const, 
+    marginBottom: '60px',
+    color: '#2d3748',
+    fontWeight: 'bold'
+  }}}}>
+    Section Title
+  </h2>
+  <div style={{{{ 
+    display: 'grid', 
+    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
+    gap: '40px' 
+  }}}}>
+    {{/* Content cards */}}
+  </div>
+</section>
+```
+
+3. FEATURE CARDS:
+```typescript
+<div style={{{{
+  background: 'white',
+  padding: '40px',
+  borderRadius: '20px',
+  boxShadow: '0 20px 60px rgba(0,0,0,0.1)',
+  transition: 'all 0.3s ease',
+  border: '1px solid #e2e8f0',
+  height: '100%'
+}}}}>
+  <div style={{{{ 
+    width: '60px', 
+    height: '60px', 
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    borderRadius: '15px',
+    marginBottom: '20px',
+    display: 'flex',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const
+  }}}}>
+    <span style={{{{ fontSize: '2rem' }}}}>🚀</span>
+  </div>
+  <h3 style={{{{ fontSize: '1.8rem', color: '#2d3748', marginBottom: '16px', fontWeight: '600' }}}}>
+    Feature Title
+  </h3>
+  <p style={{{{ color: '#718096', fontSize: '1.1rem', lineHeight: '1.8' }}}}>
+    Detailed feature description with real content
+  </p>
+</div>
+```
+
+4. BUTTONS:
+```typescript
+<button style={{{{
+  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  color: 'white',
+  padding: '18px 48px',
+  fontSize: '1.2rem',
+  fontWeight: '600',
+  border: 'none',
+  borderRadius: '50px',
+  cursor: 'pointer',
+  boxShadow: '0 10px 30px rgba(102, 126, 234, 0.4)',
+  transition: 'all 0.3s ease',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '1px'
+}}}}>
+  Get Started
+</button>
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+📝 CONTENT REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════════════════
+
+- Write REAL, engaging content (NO "Lorem ipsum"!)
+- Multiple sections (Hero, Features, Benefits, CTA)
+- Use emojis for visual interest (🚀 💡 ⭐ 🎯 ✨)
+- Descriptive headings and subheadings
+- Compelling copy that matches the page description
+- Professional tone
+
+═══════════════════════════════════════════════════════════════════════════════
+⚛️ REACT & TYPESCRIPT:
+═══════════════════════════════════════════════════════════════════════════════
+
+- Use React.FC type
+- Proper TypeScript (no 'any')
+- Modern hooks if needed
+- Clean, readable code
+{"- API integration with loading/error states" if backend_info else ""}
+
+═══════════════════════════════════════════════════════════════════════════════
+🚫 CRITICAL RULES - NEVER BREAK THESE:
+═══════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Import from '../components/Name.tsx' (NOT './Name.tsx')
+2. ✅ Use inline styles with modern gradients and shadows
+3. ✅ Add real, meaningful content
+4. ✅ Make it visually stunning
+5. ❌ NEVER redefine imported components
+6. ❌ NEVER use boring, plain styles
+7. ❌ NEVER use placeholder content
+8. ❌ NEVER forget .tsx extension in imports
+
+Return ONLY the complete TypeScript React component code.
+NO explanations. NO markdown. NO comments about file locations.
 """
         return prompt
     
@@ -797,6 +940,23 @@ CRITICAL IMPORT RULES:
 - For pages: import HomePage from './pages/HomePage.tsx'
 - This prevents "Module not found" errors during build
 
+CRITICAL: NEVER REDEFINE IMPORTED COMPONENTS
+- If you import a component, DO NOT define it again in the same file
+- Example of ERROR (DO NOT DO THIS):
+  ```
+  import Header from '../components/Header.tsx';  // Imported
+  const Header = () => { ... };  // ERROR: Redeclaration!
+  ```
+- Each component should be defined ONLY ONCE in its own file
+- Pages should ONLY import and use components, never redefine them
+- If a component is imported, use it directly - do not create a local version
+
+COMPONENT USAGE RULES:
+- Import components at the top of the file
+- Use imported components in JSX: <Header />
+- Never create placeholder/dummy versions of imported components
+- Each component lives in its own file (src/components/ComponentName.tsx)
+
 Return ONLY the TypeScript React component code, no explanations or markdown formatting.
 """
         return prompt
@@ -813,10 +973,55 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
                     start_idx = response_text.find(marker) + len(marker)
                     end_idx = response_text.find("```", start_idx)
                     if end_idx != -1:
-                        return response_text[start_idx:end_idx].strip()
+                        code = response_text[start_idx:end_idx].strip()
+                        # Validate the extracted code
+                        self._validate_generated_code(code)
+                        return code
         
         # If no code blocks found, return the entire response cleaned up
-        return response_text.strip()
+        code = response_text.strip()
+        self._validate_generated_code(code)
+        return code
+    
+    def _validate_generated_code(self, code: str) -> None:
+        """
+        Validate generated code for common errors
+        
+        Checks for:
+        - Duplicate component definitions (import + local definition)
+        - Missing imports
+        - Syntax errors
+        
+        Raises:
+            ValueError: If validation fails
+        """
+        import re
+        
+        # Check for duplicate component definitions
+        # Pattern: import ComponentName from '...' followed by const ComponentName = ...
+        imports = re.findall(r'import\s+(\w+)\s+from\s+[\'"]', code)
+        definitions = re.findall(r'(?:const|let|var|function)\s+(\w+)\s*[=:]', code)
+        
+        # Find duplicates
+        duplicates = set(imports) & set(definitions)
+        if duplicates:
+            duplicate_names = ', '.join(duplicates)
+            raise ValueError(
+                f"Code validation error: Component(s) {duplicate_names} are both imported and defined locally. "
+                f"This causes a redeclaration error. Each component should be defined only once in its own file. "
+                f"Remove the local definition and use the imported component instead."
+            )
+        
+        # Check for basic syntax issues
+        if code.count('{') != code.count('}'):
+            raise ValueError("Code validation error: Mismatched curly braces")
+        
+        if code.count('(') != code.count(')'):
+            raise ValueError("Code validation error: Mismatched parentheses")
+        
+        # Check for required imports
+        if 'React' in code and 'import React' not in code and 'import * as React' not in code:
+            raise ValueError("Code validation error: React is used but not imported")
     
     def _generate_basic_page_template(self, page: PageSpec) -> str:
         """Generate basic page template as fallback"""

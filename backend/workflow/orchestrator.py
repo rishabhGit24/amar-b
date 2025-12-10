@@ -571,11 +571,18 @@ class WorkflowOrchestrator:
                 final_message += f"\n⚠️ Automatic deployment was not available"
                 final_message += f"\nYou can manually deploy the files from the project directory."
             
-            # Send progress update
+            # Send progress update with appropriate title
+            if deployment_url:
+                title = "Application deployed successfully!"
+            elif manual_deployment_required:
+                title = "Project ready for manual deployment"
+            else:
+                title = f"Workflow {final_status}"
+            
             await self._send_progress(
                 "finalize",
                 "completed" if final_status == "completed" else "failed",
-                f"Workflow {final_status}",
+                title,
                 final_message
             )
             

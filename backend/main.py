@@ -503,6 +503,74 @@ async def get_result(session_id: str):
     )
 
 
+@app.get("/api/download/{session_id}")
+async def download_project(session_id: str):
+    """
+    Download the generated project as a zip file
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Zip file containing the generated project
+        
+    Raises:
+        HTTPException: 404 if session or project not found
+    """
+    from fastapi.responses import FileResponse
+    import zipfile
+    import tempfile
+    from pathlib import Path
+    
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    session = sessions[session_id]
+    workflow_state = session.get("workflow_state")
+    
+    if not workflow_state:
+        raise HTTPException(status_code=404, detail="Workflow not completed")
+    
+    # Get project directory from workflow state
+    project_dir = workflow_state.get("agent_context", {}).get("project_dir")
+    
+    if not project_dir or not os.path.exists(project_dir):
+        raise HTTPException(status_code=404, detail="Project files not found")
+    
+    # Create a temporary zip file
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+    temp_zip_path = temp_zip.name
+    temp_zip.close()
+    
+    try:
+        # Create zip file
+        with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            project_path = Path(project_dir)
+            for file_path in project_path.rglob('*'):
+                if file_path.is_file():
+                    # Add file to zip with relative path
+                    arcname = file_path.relative_to(project_path)
+                    zipf.write(file_path, arcname)
+        
+        # Get project name from directory
+        project_name = os.path.basename(project_dir)
+        
+        # Return zip file
+        return FileResponse(
+            temp_zip_path,
+            media_type='application/zip',
+            filename=f"{project_name}.zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={project_name}.zip"
+            }
+        )
+    except Exception as e:
+        # Clean up temp file on error
+        if os.path.exists(temp_zip_path):
+            os.unlink(temp_zip_path)
+        raise HTTPException(status_code=500, detail=f"Failed to create zip file: {str(e)}")
+
+
 async def send_progress_update(
     session_id: str,
     agent: str,
