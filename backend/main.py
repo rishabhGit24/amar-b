@@ -470,14 +470,16 @@ async def get_result(session_id: str):
     
     # Build project summary
     project_summary = None
+    generated_files = workflow_state.get("generated_files", {})
+    file_list = workflow_state.get("file_list", [])
+    
     if workflow_state.get("plan"):
         plan = workflow_state["plan"]
-        generated_files = workflow_state.get("generated_files", {})
         
         project_summary = {
             "page_count": len(plan.get("pages", [])),
             "component_count": len(plan.get("components", [])),
-            "file_count": len(generated_files),
+            "file_count": len(generated_files) if generated_files else len(file_list),
             "has_backend": plan.get("backend_logic") is not None
         }
     
@@ -493,6 +495,20 @@ async def get_result(session_id: str):
             error_message = "Workflow failed without specific error details"
         elif not deployment_url:
             error_message = "Deployment URL not available"
+    
+    # If deployment failed but we have generated files, return them in the response
+    if not deployment_url and generated_files:
+        # Return dict with generated files (bypassing Pydantic model for flexibility)
+        return {
+            "success": success,
+            "url": deployment_url,
+            "error": error_message,
+            "execution_time_ms": execution_time_ms,
+            "project_summary": project_summary,
+            "generated_files": generated_files,
+            "file_list": file_list,
+            "project_location": workflow_state.get("project_location")
+        }
     
     return DeploymentResult(
         success=success,
@@ -656,16 +672,25 @@ async def execute_workflow_background(session_id: str, user_input: str):
                 f"Deployment URL: {final_state.get('deployment_url', 'N/A')}"
             )
             
-            # Send final complete message
+            # Send final complete message with generated files if deployment failed
             if session_id in active_connections:
                 try:
-                    await active_connections[session_id].send_json({
+                    complete_message = {
                         "type": "complete",
                         "message": "Workflow completed successfully",
                         "deployment_url": final_state.get("deployment_url"),
                         "execution_time_ms": final_state.get("execution_time_ms"),
                         "timestamp": datetime.now().isoformat()
-                    })
+                    }
+                    
+                    # Include generated files if deployment failed
+                    if not final_state.get("deployment_url") and final_state.get("generated_files"):
+                        complete_message["generated_files"] = final_state.get("generated_files")
+                        complete_message["file_list"] = final_state.get("file_list", [])
+                        complete_message["project_location"] = final_state.get("project_location")
+                        complete_message["deployment_error"] = final_state.get("deployment_error")
+                    
+                    await active_connections[session_id].send_json(complete_message)
                 except Exception as ws_error:
                     # Log WebSocket error but don't fail the workflow
                     error_handler.handle_error(

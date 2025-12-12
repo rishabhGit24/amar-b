@@ -248,6 +248,11 @@ class BuilderAgent:
         files['.gitignore'] = self._generate_gitignore()
         print(f"  ✓ Generated: .gitignore")
         
+        # Generate TypeScript configuration (CRITICAL for build)
+        print(f"🔨 BUILDER: Generating TypeScript configuration...")
+        files['tsconfig.json'] = self._generate_tsconfig_json()
+        print(f"  ✓ Generated: tsconfig.json")
+        
         # Generate deployment configuration files
         print(f"🔨 BUILDER: Generating deployment config files...")
         files['vercel.json'] = self._generate_vercel_config()
@@ -352,18 +357,27 @@ class BuilderAgent:
         return json.dumps(package_json, indent=2)
     
     def _generate_app_component(self, plan: Plan) -> str:
-        """Generate main App.tsx component with routing"""
+        """
+        Generate main App.tsx component with routing
+        
+        CRITICAL: This file MUST be at src/App.tsx and MUST export default App
+        for react-scripts build to work correctly. The index.tsx file imports
+        from './App' which expects this exact file structure.
+        """
         # Generate imports for all pages
         page_imports = []
         routes = []
         
         for page in plan.pages:
+            # CRITICAL: Do NOT include file extensions in imports - TypeScript resolves them automatically
             page_imports.append(f"import {page.name} from './pages/{page.name}';")
             routes.append(f'        <Route path="{page.route}" element={{<{page.name} />}} />')
         
-        imports_str = '\n'.join(page_imports)
-        routes_str = '\n'.join(routes)
+        imports_str = '\n'.join(page_imports) if page_imports else ''
+        routes_str = '\n'.join(routes) if routes else '          <Route path="/" element={<div>Welcome! No pages configured.</div>} />'
         
+        # CRITICAL: This must be exactly App.tsx at src/App.tsx
+        # The index.tsx imports from './App' which expects this file
         app_component = f"""import React from 'react';
 import {{ BrowserRouter as Router, Routes, Route }} from 'react-router-dom';
 import './App.css';
@@ -386,7 +400,14 @@ export default App;
         return app_component
     
     def _generate_index_file(self) -> str:
-        """Generate index.tsx entry point"""
+        """
+        Generate index.tsx entry point
+        
+        CRITICAL: This file MUST be at src/index.tsx and MUST import App from './App'
+        which expects src/App.tsx to exist. This is the entry point that react-scripts
+        looks for during build. The public/index.html has <div id="root"></div> which
+        this file renders into.
+        """
         return """import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
@@ -615,6 +636,11 @@ const handleSubmit = async (data: FormData) => {{
 """
         
         prompt = f"""
+🚀 PRODUCTION DEPLOYMENT CONTEXT:
+This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
+This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
+The application will be used by real users, so code quality, error handling, and user experience are CRITICAL.
+
 Generate a React TypeScript functional component for a page with the following specifications:
 
 Page Name: {page.name}
@@ -623,26 +649,117 @@ Description: {page.description}
 Required Components: {', '.join(components_list)}
 {backend_info}
 
-Requirements:
-- Use TypeScript with proper type definitions
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL PRODUCTION DEPLOYMENT REQUIREMENTS (MUST FOLLOW EXACTLY):
+═══════════════════════════════════════════════════════════════════════════════
+
+FILE STRUCTURE & IMPORTS:
+- File MUST be saved as: src/pages/{page.name}.tsx (NOT .jsx, NOT .js)
+- All imports must use correct paths WITHOUT file extensions: '../components/ComponentName' (NOT '../components/ComponentName.tsx')
+- Component MUST export as default: export default {page.name};
+- Use TypeScript (.tsx extension for files) - NEVER use .jsx or .js
+- NEVER include file extensions (.tsx, .ts, .jsx, .js) in import statements - TypeScript resolves them automatically
+- Code must be compatible with react-scripts 5.0.1 build process
+- Ensure all imports resolve correctly for production builds
+- All relative imports must be correct from src/pages/ directory
+
+CODE QUALITY REQUIREMENTS (PRODUCTION STANDARDS):
+- Use TypeScript with STRICT type definitions - NO 'any' types unless absolutely necessary
+- Implement comprehensive error handling with try-catch blocks
+- Add loading states for all async operations
+- Include user-friendly error messages
+- Handle edge cases (empty data, network failures, invalid inputs)
+- Use proper React hooks (useState, useEffect) with correct dependencies
+- Avoid memory leaks (cleanup in useEffect, proper event listener removal)
+- Optimize re-renders (use React.memo, useCallback, useMemo where appropriate)
+- Follow React best practices and patterns
+
+USER EXPERIENCE REQUIREMENTS:
+- Create a well-structured, semantic HTML layout (use proper HTML5 elements)
+- Include proper CSS classes for styling (use existing App.css classes where possible)
+- Make the component FULLY RESPONSIVE (mobile, tablet, desktop)
+- Ensure ACCESSIBILITY (ARIA labels, keyboard navigation, screen reader support)
+- Add meaningful, user-friendly content based on the page description
+- Include proper loading indicators and empty states
+- Provide clear user feedback for all actions
+
+COMPONENT INTEGRATION:
 - Import and use the specified components: {', '.join(components_list)}
-- Create a well-structured, semantic HTML layout
-- Include proper CSS classes for styling
-- Make the component responsive and accessible
-- Add meaningful content based on the page description
-{"- Integrate with backend API endpoints as specified above" if backend_info else ""}
-{"- Include form handling with API calls if this is a form page" if backend_info else ""}
+- Ensure components are properly integrated and styled consistently
+- Handle component prop validation and error states
 
-Component Structure:
-- Import React and required components (including useState, useEffect if needed)
+{"═══════════════════════════════════════════════════════════════════════════════" if backend_info else ""}
+{"BACKEND API INTEGRATION REQUIREMENTS:" if backend_info else ""}
+{"- Use fetch() or axios with proper error handling" if backend_info else ""}
+{"- Include loading states during API requests" if backend_info else ""}
+{"- Display user-friendly error messages for API failures" if backend_info else ""}
+{"- Handle network timeouts and retries appropriately" if backend_info else ""}
+{"- Validate API responses before using data" if backend_info else ""}
+{"- Use async/await for cleaner code (avoid .then() chains)" if backend_info else ""}
+{"- Include proper TypeScript types for API responses" if backend_info else ""}
+{"- For forms: prevent default submission and call API endpoint" if backend_info else ""}
+{"- For GET requests: fetch data on component mount using useEffect" if backend_info else ""}
+{"- Handle CORS properly (backend has cors middleware)" if backend_info else ""}
+{"═══════════════════════════════════════════════════════════════════════════════" if backend_info else ""}
+
+═══════════════════════════════════════════════════════════════════════════════
+COMPONENT STRUCTURE REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════════════════
+
+IMPORTS (CRITICAL - NO FILE EXTENSIONS):
+- Import React and required hooks: import React, {{ useState, useEffect }} from 'react';
+- Import components from '../components/ComponentName' WITHOUT file extension
+  ✓ CORRECT: import Header from '../components/Header';
+  ✗ WRONG: import Header from '../components/Header.tsx';
+- Import React Router if needed: import {{ Link, useNavigate }} from 'react-router-dom';
+
+COMPONENT DEFINITION:
 - Define the functional component with proper TypeScript typing
-- Export as default
-- Use semantic HTML elements (header, main, section, etc.)
-- Include navigation if this is not the home page
-{"- Add state management for API data and loading states" if backend_info else ""}
-{"- Include error handling and user feedback" if backend_info else ""}
+- Use React.FC or explicit return type: const {page.name}: React.FC = () => {{ ... }}
+- Export as default: export default {page.name};
+- Use semantic HTML5 elements (header, main, section, article, nav, footer, etc.)
+- Include proper ARIA attributes for accessibility
+- Add proper className attributes for styling
 
-Return ONLY the TypeScript React component code, no explanations or markdown formatting.
+STATE MANAGEMENT:
+{"- Use useState for component state" if backend_info else ""}
+{"- Use useEffect for API calls and side effects" if backend_info else ""}
+{"- Include loading state: const [loading, setLoading] = useState(true);" if backend_info else ""}
+{"- Include error state: const [error, setError] = useState<string | null>(null);" if backend_info else ""}
+{"- Include data state: const [data, setData] = useState<DataType | null>(null);" if backend_info else ""}
+{"- Cleanup in useEffect return function to prevent memory leaks" if backend_info else ""}
+
+ERROR HANDLING PATTERN:
+{"- Wrap API calls in try-catch blocks" if backend_info else ""}
+{"- Set error state on catch: catch (err) {{ setError(err instanceof Error ? err.message : 'An error occurred'); }}" if backend_info else ""}
+{"- Display error messages to users in a user-friendly way" if backend_info else ""}
+
+RENDERING LOGIC:
+- Show loading indicator when loading: {{ loading && <div>Loading...</div> }}
+{"- Show error message when error: {{ error && <div className='error'>{{error}}</div> }}" if backend_info else ""}
+{"- Show content when data is loaded: {{ !loading && !error && data && <div>...</div> }}" if backend_info else ""}
+- Include navigation if this is not the home page
+- Use proper semantic structure with meaningful content
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE STRUCTURE CONTEXT:
+═══════════════════════════════════════════════════════════════════════════════
+- Main App component is at: src/App.tsx (import as: import App from './App';)
+- Entry point is at: src/index.tsx
+- This page component is at: src/pages/{page.name}.tsx
+- Shared components are at: src/components/ComponentName.tsx (import as: import ComponentName from '../components/ComponentName';)
+- All imports must use relative paths WITHOUT file extensions from the current file location
+- Example CORRECT imports: import Header from '../components/Header'; import Footer from '../components/Footer';
+- Example WRONG imports: import Header from '../components/Header.tsx'; (DO NOT DO THIS)
+
+═══════════════════════════════════════════════════════════════════════════════
+FINAL REMINDER:
+═══════════════════════════════════════════════════════════════════════════════
+This code will be DEPLOYED TO PRODUCTION and used by REAL USERS.
+Write PRODUCTION-QUALITY code with proper error handling, loading states, and user feedback.
+NO shortcuts, NO placeholders, NO TODO comments - COMPLETE, WORKING CODE ONLY.
+
+Return ONLY the complete TypeScript React component code, no explanations, no markdown formatting, no comments about the code.
 """
         return prompt
     
@@ -740,6 +857,11 @@ Requirements:
 """
         
         prompt = f"""
+🚀 PRODUCTION DEPLOYMENT CONTEXT:
+This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
+This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
+The component will be used by real users in production, so code quality, error handling, and user experience are CRITICAL.
+
 Generate a React TypeScript functional component with the following specifications:
 
 Component Name: {component.name}
@@ -748,32 +870,127 @@ Description: {component.description}
 {props_info}
 {backend_info}
 
-Requirements:
-- Use TypeScript with proper interface definitions for props
-- Create a reusable, well-structured component
-- Include proper CSS classes for styling
-- Make the component accessible (ARIA attributes where appropriate)
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL PRODUCTION DEPLOYMENT REQUIREMENTS (MUST FOLLOW EXACTLY):
+═══════════════════════════════════════════════════════════════════════════════
+
+FILE STRUCTURE & IMPORTS:
+- File MUST be saved as: src/components/{component.name}.tsx (NOT .jsx, NOT .js)
+- All imports must use correct relative paths WITHOUT file extensions (e.g., './OtherComponent' NOT './OtherComponent.tsx')
+- Component MUST export as default: export default {component.name};
+- Use TypeScript (.tsx extension for files) - NEVER use .jsx or .js
+- NEVER include file extensions (.tsx, .ts, .jsx, .js) in import statements - TypeScript resolves them automatically
+- Code must be compatible with react-scripts 5.0.1 build process
+- Ensure all imports resolve correctly for production builds
+
+CODE QUALITY REQUIREMENTS (PRODUCTION STANDARDS):
+- Use TypeScript with STRICT type definitions - NO 'any' types unless absolutely necessary
+- Define proper interface for props: interface {component.name}Props {{ ... }}
+- Implement comprehensive error handling with try-catch blocks
+- Add loading states for all async operations
+- Include user-friendly error messages
+- Handle edge cases (empty props, invalid inputs, null/undefined values)
+- Use proper React hooks (useState, useEffect) with correct dependencies
+- Avoid memory leaks (cleanup in useEffect, proper event listener removal)
+- Optimize re-renders (use React.memo, useCallback, useMemo where appropriate)
+- Follow React best practices and patterns
+- Create a reusable, well-structured component that can be used multiple times
+
+PROPS HANDLING:
+- Define TypeScript interface for all props
+- Validate props and provide sensible defaults
+- Handle optional props gracefully
+- Add prop validation or use TypeScript to catch prop errors at compile time
+
+USER EXPERIENCE REQUIREMENTS:
+- Include proper CSS classes for styling (use existing App.css classes where possible)
+- Make the component FULLY RESPONSIVE (mobile, tablet, desktop)
+- Ensure ACCESSIBILITY (ARIA labels, keyboard navigation, screen reader support)
 - Add meaningful default content if no props are provided
-- Follow React best practices
-{"- Include API integration as specified above" if backend_info else ""}
-{"- Add state management for loading and error states" if backend_info else ""}
+- Provide clear user feedback for all interactive elements
+- Include proper loading indicators and empty states
 
-Component Structure:
-- Import React (and useState if needed)
-- Define TypeScript interface for props (if any)
-- Define the functional component with proper typing
-- Export as default
-- Use semantic HTML elements
-- Include proper error handling for props
-{"- Include form submission handler with API call" if backend_info else ""}
+{"═══════════════════════════════════════════════════════════════════════════════" if backend_info else ""}
+{"BACKEND API INTEGRATION REQUIREMENTS:" if backend_info else ""}
+{"- Accept onSubmit callback prop for form submission" if backend_info else ""}
+{"- Use fetch() to call the backend endpoint with proper error handling" if backend_info else ""}
+{"- Include loading and error states" if backend_info else ""}
+{"- Provide user feedback on success/failure" if backend_info else ""}
+{"- Use proper TypeScript types for API responses" if backend_info else ""}
+{"- Handle network errors, timeouts, and invalid responses" if backend_info else ""}
+{"═══════════════════════════════════════════════════════════════════════════════" if backend_info else ""}
 
-Return ONLY the TypeScript React component code, no explanations or markdown formatting.
+═══════════════════════════════════════════════════════════════════════════════
+COMPONENT STRUCTURE REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════════════════
+
+IMPORTS (CRITICAL - NO FILE EXTENSIONS):
+- Import React and hooks: import React, {{ useState, useEffect }} from 'react';
+- Import other components WITHOUT file extension: import OtherComponent from './OtherComponent';
+  ✓ CORRECT: import Header from './Header';
+  ✗ WRONG: import Header from './Header.tsx';
+
+PROPS INTERFACE:
+- Define TypeScript interface: interface {component.name}Props {{ ... }}
+- Include all props with proper types (string, number, boolean, function types, etc.)
+- Mark optional props with ?: interface Props {{ required: string; optional?: number; }}
+- Use proper types, avoid 'any' unless absolutely necessary
+
+COMPONENT DEFINITION:
+- Define the functional component with proper typing: const {component.name}: React.FC<{component.name}Props> = (props) => {{ ... }}
+- Or: const {component.name} = ({{ prop1, prop2 }}: {component.name}Props) => {{ ... }}
+- Export as default: export default {component.name};
+- Use semantic HTML5 elements (button, input, form, section, article, etc.)
+- Include proper ARIA attributes for accessibility
+- Add proper className attributes for styling
+
+STATE MANAGEMENT:
+{"- Use useState for component state" if backend_info else ""}
+{"- Use useEffect for API calls and side effects" if backend_info else ""}
+{"- Include loading state: const [loading, setLoading] = useState(false);" if backend_info else ""}
+{"- Include error state: const [error, setError] = useState<string | null>(null);" if backend_info else ""}
+{"- Cleanup in useEffect return function to prevent memory leaks" if backend_info else ""}
+
+ERROR HANDLING:
+- Validate props and handle invalid/missing props gracefully
+- Use try-catch blocks for all async operations
+{"- Display user-friendly error messages" if backend_info else ""}
+- Handle edge cases (null, undefined, empty arrays, etc.)
+
+RENDERING LOGIC:
+{"- Show loading indicator: {{ loading && <div>Loading...</div> }}" if backend_info else ""}
+{"- Show error message: {{ error && <div className='error'>{{error}}</div> }}" if backend_info else ""}
+- Use conditional rendering for different states
+- Provide meaningful default content when props are not provided
+- Ensure component works correctly with or without props
+
+═══════════════════════════════════════════════════════════════════════════════
+FILE STRUCTURE CONTEXT:
+═══════════════════════════════════════════════════════════════════════════════
+- Main App component is at: src/App.tsx (import as: import App from '../App';)
+- Entry point is at: src/index.tsx
+- This component is at: src/components/{component.name}.tsx
+- Pages are at: src/pages/PageName.tsx (import as: import PageName from '../pages/PageName';)
+- Other components are at: src/components/OtherComponent.tsx (import as: import OtherComponent from './OtherComponent';)
+- All imports must use relative paths WITHOUT file extensions from the current file location
+- Example CORRECT imports: import Header from './Header'; import Footer from './Footer';
+- Example WRONG imports: import Header from './Header.tsx'; (DO NOT DO THIS)
+
+═══════════════════════════════════════════════════════════════════════════════
+FINAL REMINDER:
+═══════════════════════════════════════════════════════════════════════════════
+This code will be DEPLOYED TO PRODUCTION and used by REAL USERS.
+Write PRODUCTION-QUALITY code with proper error handling, loading states, and user feedback.
+NO shortcuts, NO placeholders, NO TODO comments - COMPLETE, WORKING CODE ONLY.
+
+Return ONLY the complete TypeScript React component code, no explanations, no markdown formatting, no comments about the code.
 """
         return prompt
     
     def _extract_code_from_response(self, response_text: str) -> str:
-        """Extract code from LLM response, removing markdown formatting"""
+        """Extract code from LLM response, removing markdown formatting and fixing imports"""
         # Remove markdown code blocks if present
+        code = None
         if "```" in response_text:
             # Find the code block
             start_markers = ["```typescript", "```tsx", "```ts", "```javascript", "```jsx", "```"]
@@ -783,10 +1000,125 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
                     start_idx = response_text.find(marker) + len(marker)
                     end_idx = response_text.find("```", start_idx)
                     if end_idx != -1:
-                        return response_text[start_idx:end_idx].strip()
+                        code = response_text[start_idx:end_idx].strip()
+                        break
         
-        # If no code blocks found, return the entire response cleaned up
-        return response_text.strip()
+        # If no code blocks found, use the entire response
+        if code is None:
+            code = response_text.strip()
+        
+        # Clean up imports: remove file extensions from import statements
+        code = self._clean_imports(code)
+        
+        return code
+    
+    def _clean_imports(self, code: str) -> str:
+        """
+        Clean up import statements to remove file extensions
+        
+        TypeScript/React imports should NOT include file extensions.
+        This function removes .tsx, .ts, .jsx, .js extensions from import paths.
+        Handles both single and double quotes, and nested paths like '../components/Header/Header.tsx'
+        """
+        import re
+        
+        # Pattern to match import statements with file extensions
+        # Matches: import ... from '.../Component.tsx' or import ... from ".../Component.tsx"
+        # Also handles: import ... from '../components/Header/Header.tsx'
+        # This regex captures the quote type and path, then reconstructs without extension
+        def replace_import(match):
+            quote = match.group(1)  # The quote character (' or ")
+            path = match.group(2)   # The path without extension
+            return f"from {quote}{path}{quote}"
+        
+        # Match: from 'path/to/file.tsx' or from "path/to/file.tsx"
+        # Captures quote type and path separately
+        pattern = r"from\s+(['\"])([^'\"]+)\.(tsx|ts|jsx|js)(['\"])"
+        
+        cleaned_code = re.sub(pattern, replace_import, code)
+        
+        return cleaned_code
+    
+    def _validate_imports(self, code: str, file_path: str) -> None:
+        """
+        Validate that imports don't have file extensions
+        
+        This is a safety check to catch any imports that might have slipped through.
+        Logs warnings but doesn't fail - the _clean_imports function should have fixed them.
+        """
+        import re
+        
+        # Check for imports with extensions
+        pattern = r"from\s+['\"]([^'\"]+)\.(tsx|ts|jsx|js)['\"]"
+        matches = re.findall(pattern, code)
+        
+        if matches:
+            # Log warning but don't fail - imports should have been cleaned
+            print(f"⚠️  WARNING: Found imports with extensions in {file_path}: {matches}")
+            print(f"   These should have been cleaned by _clean_imports().")
+    
+    def _validate_code_quality(self, code: str, file_path: str) -> List[str]:
+        """
+        Comprehensive code quality validation
+        
+        Checks for common issues that could cause build failures:
+        - Missing imports
+        - Syntax errors
+        - TypeScript type issues
+        - Missing exports
+        - Common React errors
+        
+        Returns:
+            List of validation error messages (empty if no errors)
+        """
+        errors = []
+        import re
+        
+        # Check 1: Must have React import for .tsx files (unless using new JSX transform)
+        if file_path.endswith('.tsx') and 'import' in code:
+            if 'import React' not in code and 'from \'react\'' not in code and 'from "react"' not in code:
+                # Check if it's using new JSX transform (no React import needed)
+                if 'jsx: "react-jsx"' not in code and 'jsx: \'react-jsx\'' not in code:
+                    # This is actually OK with react-jsx transform, so we'll skip this check
+                    pass
+        
+        # Check 2: Must have default export for component files
+        if file_path.endswith('.tsx') and ('src/components/' in file_path or 'src/pages/' in file_path):
+            if 'export default' not in code:
+                errors.append("Missing default export - component files must export default")
+        
+        # Check 3: Check for excessive 'any' usage
+        if 'any' in code:
+            # Count 'any' usage (excluding common patterns like 'any[]')
+            any_count = len(re.findall(r':\s*any\b', code))
+            if any_count > 3:  # Allow a few any types, but warn on more
+                errors.append(f"Excessive use of 'any' type ({any_count} occurrences) - use proper TypeScript types")
+        
+        # Check 4: Check for missing error handling in async code
+        if ('async' in code or 'await' in code or 'fetch(' in code) and 'try' not in code:
+            errors.append("Async code without try-catch error handling")
+        
+        # Check 5: Check for imports with file extensions (should be caught by _clean_imports)
+        if re.search(r"from\s+['\"][^'\"]+\.(tsx|ts|jsx|js)['\"]", code):
+            errors.append("Import statements contain file extensions - should be removed")
+        
+        # Check 6: Check for proper component structure
+        if file_path.endswith('.tsx') and 'src/components/' in file_path:
+            component_name = os.path.basename(file_path).replace('.tsx', '')
+            if f'export default {component_name}' not in code:
+                # Check if it's exported with different name or pattern
+                if 'export default' not in code:
+                    errors.append(f"Component {component_name} should export as default")
+        
+        # Check 7: Check for unclosed JSX tags (basic check)
+        if file_path.endswith('.tsx'):
+            open_tags = len(re.findall(r'<[^/][^>]*>', code))
+            close_tags = len(re.findall(r'</[^>]+>', code))
+            # Allow some difference for self-closing tags, but flag large discrepancies
+            if abs(open_tags - close_tags) > 5:
+                errors.append("Possible unclosed JSX tags detected - check tag matching")
+        
+        return errors
     
     def _generate_basic_page_template(self, page: PageSpec) -> str:
         """Generate basic page template as fallback"""
@@ -1202,15 +1534,22 @@ module.exports = {handler_name};
 """
     
     def _generate_app_test(self) -> str:
-        """Generate basic App test file"""
-        return """import React from 'react';
+        """
+        Generate basic App test file
+        
+        CRITICAL: Must import @testing-library/jest-dom to get TypeScript types
+        for matchers like toBeInTheDocument()
+        """
+        return """import '@testing-library/jest-dom';
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
 test('renders app without crashing', () => {
   render(<App />);
   // Basic test to ensure app renders
-  expect(document.querySelector('.App')).toBeInTheDocument();
+  const appElement = document.querySelector('.App');
+  expect(appElement).toBeInTheDocument();
 });
 """
     
@@ -1307,6 +1646,42 @@ yarn-error.log*
 .netlify
 """
         return gitignore_content
+    
+    def _generate_tsconfig_json(self) -> str:
+        """
+        Generate tsconfig.json for TypeScript configuration
+        
+        CRITICAL: This file is required for react-scripts build to properly resolve
+        TypeScript imports. Without it, imports like './App' will fail during build.
+        """
+        import json
+        tsconfig = {
+            "compilerOptions": {
+                "target": "es5",
+                "lib": [
+                    "dom",
+                    "dom.iterable",
+                    "es6"
+                ],
+                "allowJs": True,
+                "skipLibCheck": True,
+                "esModuleInterop": True,
+                "allowSyntheticDefaultImports": True,
+                "strict": True,
+                "forceConsistentCasingInFileNames": True,
+                "noFallthroughCasesInSwitch": True,
+                "module": "esnext",
+                "moduleResolution": "node",
+                "resolveJsonModule": True,
+                "isolatedModules": True,
+                "noEmit": True,
+                "jsx": "react-jsx"
+            },
+            "include": [
+                "src"
+            ]
+        }
+        return json.dumps(tsconfig, indent=2)
     
     def _generate_vercel_config(self) -> str:
         """Generate vercel.json configuration for deployment"""
@@ -1560,9 +1935,43 @@ This application was generated automatically based on the following plan:
             # Create directory structure if needed
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             
+            # Clean up imports in TypeScript/React files before writing
+            if file_path.endswith('.tsx') or file_path.endswith('.ts'):
+                content = self._clean_imports(content)
+            
+            # Comprehensive validation before writing
+            if file_path.endswith('.tsx') or file_path.endswith('.ts'):
+                validation_errors = self._validate_code_quality(content, file_path)
+                if validation_errors:
+                    print(f"⚠️  WARNING: Validation issues in {file_path}:")
+                    for error in validation_errors[:3]:  # Show first 3 errors
+                        print(f"   - {error}")
+                    # Continue anyway - let build catch actual errors
+            
             # Write file content
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
+            
+            # Verify file was written correctly
+            if not os.path.exists(full_path):
+                raise RuntimeError(f"Failed to write file: {full_path}")
+            
+            # For critical files, verify content is not empty
+            if file_path in ['src/App.tsx', 'src/index.tsx', 'package.json', 'tsconfig.json'] and os.path.getsize(full_path) == 0:
+                raise RuntimeError(f"Critical file {file_path} was written but is empty")
+            
+            # Validate imports in TypeScript files don't have extensions
+            if (file_path.endswith('.tsx') or file_path.endswith('.ts')) and file_path.startswith('src/'):
+                self._validate_imports(content, file_path)
+        
+        # Verify critical files exist after writing
+        critical_files = ['src/App.tsx', 'src/index.tsx', 'package.json', 'tsconfig.json']
+        for file_path in critical_files:
+            if file_path not in files:
+                raise RuntimeError(f"Critical file {file_path} was not generated")
+            full_path = os.path.join(base_path, file_path)
+            if not os.path.exists(full_path):
+                raise RuntimeError(f"Critical file {file_path} does not exist after writing")
         
         return base_path
     
@@ -1705,6 +2114,145 @@ This application was generated automatically based on the following plan:
             importance=1.0 if outcome == 'success' else 0.8
         )
     
+    def validate_project_before_build(self, project_dir: str) -> Dict[str, Any]:
+        """
+        Comprehensive pre-build validation
+        
+        Validates the entire project before attempting build:
+        - File structure correctness
+        - Import resolution
+        - TypeScript configuration
+        - Package.json correctness
+        - Critical file presence
+        
+        Returns:
+            Dictionary with validation results and any errors found
+        """
+        validation_results = {
+            'passed': True,
+            'errors': [],
+            'warnings': [],
+            'checks_performed': []
+        }
+        
+        # Check 1: Verify critical files exist
+        critical_files = {
+            'src/App.tsx': 'Main App component',
+            'src/index.tsx': 'Entry point',
+            'package.json': 'Package configuration',
+            'tsconfig.json': 'TypeScript configuration',
+            'public/index.html': 'HTML template'
+        }
+        
+        for file_path, description in critical_files.items():
+            full_path = os.path.join(project_dir, file_path)
+            if os.path.exists(full_path):
+                validation_results['checks_performed'].append(f"✓ {description} exists")
+            else:
+                validation_results['errors'].append(f"Missing critical file: {file_path} ({description})")
+                validation_results['passed'] = False
+        
+        # Check 2: Validate package.json structure
+        package_json_path = os.path.join(project_dir, 'package.json')
+        if os.path.exists(package_json_path):
+            try:
+                with open(package_json_path, 'r') as f:
+                    package_data = json.load(f)
+                
+                # Check required fields
+                required_fields = ['name', 'version', 'dependencies', 'scripts']
+                for field in required_fields:
+                    if field not in package_data:
+                        validation_results['errors'].append(f"package.json missing required field: {field}")
+                        validation_results['passed'] = False
+                    else:
+                        validation_results['checks_performed'].append(f"✓ package.json has {field}")
+                
+                # Check build script exists
+                if 'scripts' in package_data and 'build' in package_data['scripts']:
+                    validation_results['checks_performed'].append("✓ package.json has build script")
+                else:
+                    validation_results['errors'].append("package.json missing 'build' script")
+                    validation_results['passed'] = False
+                
+                # Check required dependencies
+                deps = package_data.get('dependencies', {})
+                required_deps = ['react', 'react-dom', 'react-scripts']
+                for dep in required_deps:
+                    if dep not in deps:
+                        validation_results['errors'].append(f"Missing required dependency: {dep}")
+                        validation_results['passed'] = False
+                    else:
+                        validation_results['checks_performed'].append(f"✓ Has dependency: {dep}")
+                
+            except json.JSONDecodeError as e:
+                validation_results['errors'].append(f"package.json is invalid JSON: {str(e)}")
+                validation_results['passed'] = False
+            except Exception as e:
+                validation_results['errors'].append(f"Error reading package.json: {str(e)}")
+                validation_results['passed'] = False
+        
+        # Check 3: Validate tsconfig.json
+        tsconfig_path = os.path.join(project_dir, 'tsconfig.json')
+        if os.path.exists(tsconfig_path):
+            try:
+                with open(tsconfig_path, 'r') as f:
+                    tsconfig_data = json.load(f)
+                
+                # Check required compiler options
+                if 'compilerOptions' in tsconfig_data:
+                    validation_results['checks_performed'].append("✓ tsconfig.json has compilerOptions")
+                    comp_opts = tsconfig_data['compilerOptions']
+                    
+                    # Check for jsx setting
+                    if 'jsx' in comp_opts:
+                        validation_results['checks_performed'].append(f"✓ tsconfig.json has jsx: {comp_opts['jsx']}")
+                    else:
+                        validation_results['warnings'].append("tsconfig.json missing 'jsx' option")
+                    
+                    # Check for moduleResolution
+                    if 'moduleResolution' in comp_opts:
+                        validation_results['checks_performed'].append("✓ tsconfig.json has moduleResolution")
+                else:
+                    validation_results['errors'].append("tsconfig.json missing 'compilerOptions'")
+                    validation_results['passed'] = False
+                
+            except json.JSONDecodeError as e:
+                validation_results['errors'].append(f"tsconfig.json is invalid JSON: {str(e)}")
+                validation_results['passed'] = False
+            except Exception as e:
+                validation_results['errors'].append(f"Error reading tsconfig.json: {str(e)}")
+                validation_results['passed'] = False
+        
+        # Check 4: Validate TypeScript files for common issues
+        import re
+        tsx_files = []
+        for root, dirs, files in os.walk(os.path.join(project_dir, 'src')):
+            for file in files:
+                if file.endswith('.tsx') or file.endswith('.ts'):
+                    tsx_files.append(os.path.join(root, file))
+        
+        for tsx_file in tsx_files[:10]:  # Check first 10 files
+            try:
+                with open(tsx_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Check for imports with extensions
+                if re.search(r"from\s+['\"][^'\"]+\.(tsx|ts|jsx|js)['\"]", content):
+                    rel_path = os.path.relpath(tsx_file, project_dir)
+                    validation_results['warnings'].append(f"{rel_path}: Contains imports with file extensions")
+                
+                # Check for default export in component files
+                if 'src/components/' in tsx_file or 'src/pages/' in tsx_file:
+                    if 'export default' not in content:
+                        rel_path = os.path.relpath(tsx_file, project_dir)
+                        validation_results['warnings'].append(f"{rel_path}: Missing default export")
+                
+            except Exception as e:
+                validation_results['warnings'].append(f"Could not validate {tsx_file}: {str(e)}")
+        
+        return validation_results
+    
     def execute_tests(self, project_dir: str, session_id: str) -> TestResults:
         """
         Execute pytest tests on generated code and capture results
@@ -1731,7 +2279,7 @@ This application was generated automatically based on the following plan:
             try:
                 # Install dependencies first (if package.json exists)
                 if os.path.exists('package.json'):
-                    # Run npm install
+                    print("🔍 BUILDER: Installing dependencies...")
                     npm_result = subprocess.run(
                         ['npm', 'install'],
                         capture_output=True,
@@ -1740,9 +2288,33 @@ This application was generated automatically based on the following plan:
                     )
                     
                     if npm_result.returncode != 0:
-                        raise RuntimeError(f"npm install failed: {npm_result.stderr}")
+                        error_msg = f"npm install failed: {npm_result.stderr}"
+                        print(f"❌ BUILDER: {error_msg}")
+                        raise RuntimeError(error_msg)
+                    print("✓ BUILDER: Dependencies installed successfully")
+                
+                # CRITICAL: Run build first to catch TypeScript and build errors
+                print("🔍 BUILDER: Running production build test...")
+                build_result = subprocess.run(
+                    ['npm', 'run', 'build'],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout for build
+                )
+                
+                if build_result.returncode != 0:
+                    # Build failed - this is critical
+                    error_msg = f"Build failed: {build_result.stderr}"
+                    print(f"❌ BUILDER: {error_msg}")
+                    # Extract key errors from stderr
+                    error_lines = build_result.stderr.split('\n')
+                    key_errors = [line for line in error_lines if 'error' in line.lower() or 'failed' in line.lower()][:5]
+                    raise RuntimeError(f"Build failed:\n" + "\n".join(key_errors))
+                
+                print("✓ BUILDER: Production build successful")
                 
                 # Run tests using npm test (which runs react-scripts test)
+                print("🔍 BUILDER: Running unit tests...")
                 test_result = subprocess.run(
                     ['npm', 'test', '--', '--watchAll=false', '--testTimeout=30000'],
                     capture_output=True,
@@ -2092,14 +2664,30 @@ This application was generated automatically based on the following plan:
         test_failures = error_context.get('test_failures', [])
         
         prompt = f"""
-The following React TypeScript page component failed tests. Please regenerate it with fixes.
+🚀 PRODUCTION DEPLOYMENT CONTEXT - CRITICAL FIX REQUIRED:
+This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
+The previous code FAILED tests and MUST be fixed to production quality standards.
+This is NOT a demo - it must be PRODUCTION-READY, HIGH-QUALITY code.
+
+The following React TypeScript page component FAILED TESTS. Regenerate it with COMPLETE FIXES:
 
 Page Name: {page.name}
 Route: {page.route}
 Description: {page.description}
 Required Components: {', '.join(page.components)}
 
-PREVIOUS CODE (FAILED):
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL DEPLOYMENT REQUIREMENTS (MUST FOLLOW EXACTLY):
+═══════════════════════════════════════════════════════════════════════════════
+- File MUST be at: src/pages/{page.name}.tsx (NOT .jsx, NOT .js)
+- Component MUST export as default: export default {page.name};
+- All imports must use correct relative paths WITHOUT file extensions from src/pages/ (e.g., '../components/Header' NOT '../components/Header.tsx')
+- Use TypeScript (.tsx for files) - NEVER .jsx or .js
+- NEVER include file extensions in import statements
+- Code must work with react-scripts 5.0.1 build process
+- Code must be PRODUCTION-READY with proper error handling, loading states, and user feedback
+
+PREVIOUS CODE (FAILED - DO NOT REPEAT THESE ERRORS):
 ```typescript
 {original_content}
 ```
@@ -2110,16 +2698,28 @@ ERROR CONTEXT:
 TEST FAILURES:
 {chr(10).join(test_failures) if test_failures else 'No specific test failures provided'}
 
-Please regenerate the component addressing these issues:
-- Fix any syntax errors or type errors
-- Ensure all imports are correct
-- Ensure proper TypeScript typing
-- Make sure the component exports correctly
-- Address the specific test failures mentioned above
-- Use semantic HTML and proper CSS classes
-- Ensure the component is accessible
+═══════════════════════════════════════════════════════════════════════════════
+REQUIRED FIXES (ADDRESS ALL OF THESE):
+═══════════════════════════════════════════════════════════════════════════════
+- Fix ALL syntax errors and type errors
+- Ensure all imports are correct WITHOUT file extensions (use '../components/ComponentName' NOT '../components/ComponentName.tsx')
+- Ensure proper TypeScript typing with NO 'any' types
+- Make sure the component exports correctly as default: export default {page.name};
+- Address ALL specific test failures mentioned above
+- Use semantic HTML5 elements and proper CSS classes
+- Ensure the component is FULLY ACCESSIBLE (ARIA labels, keyboard navigation)
+- Add proper error handling and loading states
+- Verify file structure matches: src/pages/{page.name}.tsx
+- Remove ANY .tsx, .ts, .jsx, .js extensions from import paths
+- Ensure code is PRODUCTION-QUALITY with no shortcuts or placeholders
 
-Return ONLY the corrected TypeScript React component code, no explanations or markdown formatting.
+═══════════════════════════════════════════════════════════════════════════════
+FINAL REMINDER:
+═══════════════════════════════════════════════════════════════════════════════
+This code will be DEPLOYED TO PRODUCTION. Write COMPLETE, WORKING, PRODUCTION-QUALITY code.
+NO shortcuts, NO placeholders, NO TODO comments - FIX ALL ERRORS COMPLETELY.
+
+Return ONLY the corrected TypeScript React component code, no explanations, no markdown formatting.
 """
         
         try:
@@ -2150,14 +2750,30 @@ Return ONLY the corrected TypeScript React component code, no explanations or ma
             props_info = f"Props: {', '.join(props_list)}"
         
         prompt = f"""
-The following React TypeScript component failed tests. Please regenerate it with fixes.
+🚀 PRODUCTION DEPLOYMENT CONTEXT - CRITICAL FIX REQUIRED:
+This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
+The previous code FAILED tests and MUST be fixed to production quality standards.
+This is NOT a demo - it must be PRODUCTION-READY, HIGH-QUALITY code.
+
+The following React TypeScript component FAILED TESTS. Regenerate it with COMPLETE FIXES:
 
 Component Name: {component.name}
 Type: {component.type}
 Description: {component.description}
 {props_info}
 
-PREVIOUS CODE (FAILED):
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL DEPLOYMENT REQUIREMENTS (MUST FOLLOW EXACTLY):
+═══════════════════════════════════════════════════════════════════════════════
+- File MUST be at: src/components/{component.name}.tsx (NOT .jsx, NOT .js)
+- Component MUST export as default: export default {component.name};
+- All imports must use correct relative paths WITHOUT file extensions from src/components/ (e.g., './OtherComponent' NOT './OtherComponent.tsx')
+- Use TypeScript (.tsx for files) - NEVER .jsx or .js
+- NEVER include file extensions in import statements
+- Code must work with react-scripts 5.0.1 build process
+- Code must be PRODUCTION-READY with proper error handling and user feedback
+
+PREVIOUS CODE (FAILED - DO NOT REPEAT THESE ERRORS):
 ```typescript
 {original_content}
 ```
@@ -2168,17 +2784,29 @@ ERROR CONTEXT:
 TEST FAILURES:
 {chr(10).join(test_failures) if test_failures else 'No specific test failures provided'}
 
-Please regenerate the component addressing these issues:
-- Fix any syntax errors or type errors
-- Ensure all imports are correct
-- Ensure proper TypeScript typing with interface definitions
-- Make sure the component exports correctly
-- Address the specific test failures mentioned above
-- Use semantic HTML and proper CSS classes
-- Ensure the component is accessible
-- Handle props correctly if specified
+═══════════════════════════════════════════════════════════════════════════════
+REQUIRED FIXES (ADDRESS ALL OF THESE):
+═══════════════════════════════════════════════════════════════════════════════
+- Fix ALL syntax errors and type errors
+- Ensure all imports are correct WITHOUT file extensions (use './OtherComponent' NOT './OtherComponent.tsx')
+- Ensure proper TypeScript typing with interface definitions: interface {component.name}Props {{ ... }}
+- Make sure the component exports correctly as default: export default {component.name};
+- Address ALL specific test failures mentioned above
+- Use semantic HTML5 elements and proper CSS classes
+- Ensure the component is FULLY ACCESSIBLE (ARIA labels, keyboard navigation)
+- Handle props correctly if specified with proper validation
+- Add proper error handling and edge case handling
+- Verify file structure matches: src/components/{component.name}.tsx
+- Remove ANY .tsx, .ts, .jsx, .js extensions from import paths
+- Ensure code is PRODUCTION-QUALITY with no shortcuts or placeholders
 
-Return ONLY the corrected TypeScript React component code, no explanations or markdown formatting.
+═══════════════════════════════════════════════════════════════════════════════
+FINAL REMINDER:
+═══════════════════════════════════════════════════════════════════════════════
+This code will be DEPLOYED TO PRODUCTION. Write COMPLETE, WORKING, PRODUCTION-QUALITY code.
+NO shortcuts, NO placeholders, NO TODO comments - FIX ALL ERRORS COMPLETELY.
+
+Return ONLY the corrected TypeScript React component code, no explanations, no markdown formatting.
 """
         
         try:
@@ -2205,6 +2833,13 @@ Return ONLY the corrected TypeScript React component code, no explanations or ma
         prompt = f"""
 The following React TypeScript App component with routing failed tests. Please regenerate it with fixes.
 
+CRITICAL DEPLOYMENT REQUIREMENTS:
+- File MUST be at: src/App.tsx (NOT App.jsx, NOT App.js)
+- Component MUST export as default: export default App;
+- The index.tsx file imports from './App' which expects src/App.tsx
+- This is the main routing component that react-scripts build requires
+- All page imports must use './pages/PageName' (relative from src/)
+
 Pages to route:
 {chr(10).join([f"- {page.name} at {page.route}" for page in plan.pages])}
 
@@ -2221,11 +2856,17 @@ TEST FAILURES:
 
 Please regenerate the App component addressing these issues:
 - Fix any syntax errors or type errors
-- Ensure all imports are correct (React, react-router-dom, pages)
+- Ensure all imports are correct WITHOUT file extensions:
+  * import React from 'react';
+  * import {{ BrowserRouter as Router, Routes, Route }} from 'react-router-dom';
+  * import './App.css';
+  * import PageName from './pages/PageName'; (for each page - NO .tsx extension)
 - Ensure proper React Router setup with BrowserRouter, Routes, and Route
 - Make sure all pages are imported and routed correctly
 - Address the specific test failures mentioned above
-- Ensure the component exports correctly
+- Ensure the component exports correctly: export default App;
+- Verify file structure: src/App.tsx (this is critical for build to work)
+- Remove any .tsx, .ts, .jsx, .js extensions from import paths
 
 Return ONLY the corrected TypeScript React component code, no explanations or markdown formatting.
 """

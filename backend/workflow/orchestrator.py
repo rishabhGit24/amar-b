@@ -421,13 +421,16 @@ class WorkflowOrchestrator:
             else:
                 # Deployment failed - but don't fail the workflow, just log it
                 error_msg = '; '.join(response.errors)
+                generated_files = response.output.get('generated_files', {})
+                file_list = response.output.get('file_list', [])
+                
                 await self._send_progress(
                     "deployer",
                     "skipped",
-                    "Deployment skipped",
-                    f"Project files available at: {project_dir}"
+                    "Deployment skipped - Generated files available",
+                    f"Project files available at: {project_dir}. {len(file_list)} files generated."
                 )
-                # Continue workflow with project location instead of deployment URL
+                # Continue workflow with project location and generated files
                 return update_workflow_state(
                     state,
                     'deployer',
@@ -436,6 +439,8 @@ class WorkflowOrchestrator:
                         'project_location': project_dir,
                         'deployment_skipped': True,
                         'deployment_error': error_msg,
+                        'generated_files': generated_files,
+                        'file_list': file_list,
                         'current_agent': 'deployer'
                     }
                 )
@@ -448,7 +453,18 @@ class WorkflowOrchestrator:
                 "Deployment error",
                 error_msg
             )
-            return add_error_to_state(state, error_msg, 'deployer')
+            # Try to include generated files if available
+            project_dict = state.get('agent_context', {}).get('project', {})
+            generated_files = project_dict.get('files', {}) if project_dict else {}
+            project_dir = state.get('agent_context', {}).get('project_dir')
+            
+            updated_state = add_error_to_state(state, error_msg, 'deployer')
+            if generated_files:
+                updated_state['generated_files'] = generated_files
+                updated_state['file_list'] = list(generated_files.keys())
+            if project_dir:
+                updated_state['project_location'] = project_dir
+            return updated_state
     
     async def _self_heal_node(self, state: WorkflowState) -> WorkflowState:
         """

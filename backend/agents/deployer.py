@@ -142,6 +142,30 @@ class DeployerAgent:
         """
         start_time = datetime.now()
         
+        # Verify critical files exist before deployment
+        critical_files = ['src/App.tsx', 'src/index.tsx', 'package.json', 'tsconfig.json', 'public/index.html']
+        missing_files = []
+        for file_path in critical_files:
+            full_path = os.path.join(project_dir, file_path)
+            if not os.path.exists(full_path):
+                missing_files.append(file_path)
+        
+        if missing_files:
+            self.logger.error(f"Critical files missing before deployment: {missing_files}")
+            # Still try to return generated files even if deployment will fail
+            return AgentResponse(
+                agent_name='deployer',
+                success=False,
+                output={
+                    'error': f'Critical files missing: {", ".join(missing_files)}',
+                    'generated_files': project.files,
+                    'project_location': project_dir,
+                    'file_list': list(project.files.keys())
+                },
+                errors=[f'Missing critical files: {", ".join(missing_files)}'],
+                execution_time_ms=int((datetime.now() - start_time).total_seconds() * 1000)
+            )
+        
         try:
             # Get memory context for this session
             memory = memory_manager.get_memory(project.session_id)
@@ -211,7 +235,7 @@ class DeployerAgent:
                         importance=0.7
                     )
             
-            # If no platform succeeded, raise error with helpful message
+            # If no platform succeeded, return error with generated files
             if not deployment_url:
                 error_message = "Deployment failed: No deployment platforms available.\n\n"
                 
@@ -229,17 +253,21 @@ class DeployerAgent:
                         self.platform_errors
                     )
                 
-                raise DeploymentError(
-                    error_message,
-                    details={
+                # Return error response with generated files so user can still access the code
+                execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
+                return AgentResponse(
+                    agent_name='deployer',
+                    success=False,
+                    output={
+                        'error': error_message,
+                        'generated_files': project.files,
+                        'project_location': project_dir,
+                        'file_list': list(project.files.keys()),
                         'attempted_platforms': self.attempted_platforms,
-                        'platform_errors': self.platform_errors,
-                        'vercel_token_set': bool(self.settings.vercel_token),
-                        'netlify_token_set': bool(self.settings.netlify_token),
-                        'vercel_cli_available': self.vercel_cli_available,
-                        'netlify_cli_available': self.netlify_cli_available
+                        'platform_errors': self.platform_errors
                     },
-                    recoverable=False
+                    errors=[error_message],
+                    execution_time_ms=execution_time
                 )
             
             # Store deployment information in memory
@@ -309,7 +337,23 @@ class DeployerAgent:
                 importance=0.9
             )
             
-            return self._create_error_response(user_message, start_time)
+            # Return error response with generated files so user can still access the code
+            execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            return AgentResponse(
+                agent_name='deployer',
+                success=False,
+                output={
+                    'error': user_message,
+                    'error_details': error_details,
+                    'generated_files': project.files,
+                    'project_location': project_dir,
+                    'file_list': list(project.files.keys()),
+                    'attempted_platforms': self.attempted_platforms,
+                    'platform_errors': self.platform_errors
+                },
+                errors=[user_message],
+                execution_time_ms=execution_time
+            )
         
         except Exception as e:
             # Handle unexpected errors
@@ -331,7 +375,21 @@ class DeployerAgent:
                 importance=0.9
             )
             
-            return self._create_error_response(user_message, start_time)
+            # Return error response with generated files so user can still access the code
+            execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            return AgentResponse(
+                agent_name='deployer',
+                success=False,
+                output={
+                    'error': user_message,
+                    'error_details': error_details,
+                    'generated_files': project.files if hasattr(project, 'files') else {},
+                    'project_location': project_dir,
+                    'file_list': list(project.files.keys()) if hasattr(project, 'files') and project.files else []
+                },
+                errors=[user_message],
+                execution_time_ms=execution_time
+            )
     
     def _select_platform(self) -> str:
         """
@@ -384,6 +442,29 @@ class DeployerAgent:
         try:
             # Check if Vercel CLI is installed
             self._ensure_vercel_cli_installed()
+            
+            # Verify critical files exist before deployment
+            critical_files = {
+                'src/App.tsx': 'Main App component',
+                'src/index.tsx': 'Entry point',
+                'package.json': 'Package configuration',
+                'tsconfig.json': 'TypeScript configuration (required for build)',
+                'public/index.html': 'HTML template'
+            }
+            missing_files = []
+            for file_path, description in critical_files.items():
+                full_path = os.path.join(project_dir, file_path)
+                if not os.path.exists(full_path):
+                    missing_files.append(f"{file_path} ({description})")
+                    self.logger.error(f"Missing critical file: {full_path}")
+            
+            if missing_files:
+                raise RuntimeError(
+                    f"Critical files missing before Vercel deployment:\n" + 
+                    "\n".join(f"  - {f}" for f in missing_files) +
+                    f"\n\nProject directory: {project_dir}\n" +
+                    f"Please ensure all files are written correctly before deployment."
+                )
             
             # Change to project directory
             original_cwd = os.getcwd()
