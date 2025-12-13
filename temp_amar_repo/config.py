@@ -8,7 +8,7 @@ load_dotenv()
 
 # Model Configuration - UPGRADED FOR 95%+ RELEVANCE
 EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"  # Better model (768-dim, higher quality)
-LLM_MODEL = "gemini-2.5-flash-lite"  # Stable model with better quota
+LLM_MODEL = "gemini-2.5-flash"  # Stable model with better quota
 
 # Chunking Configuration - OPTIMIZED
 CHUNK_SIZE = 300  # Smaller chunks for better precision

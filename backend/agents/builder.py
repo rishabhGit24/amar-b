@@ -7,6 +7,7 @@ Validates: Requirements 3.1, 3.2, 12.4
 import asyncio
 import json
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime
@@ -227,10 +228,23 @@ class BuilderAgent:
             files.update(backend_files)
             print(f"✓ BUILDER: Generated {len(backend_files)} backend file(s)")
         
-        # Generate basic test files
-        print(f"🔨 BUILDER: Generating test files...")
-        files['src/App.test.tsx'] = self._generate_app_test()
-        print(f"  ✓ Generated: src/App.test.tsx")
+        # Generate basic test files (optional - skip if it causes issues)
+        try:
+            print(f"🔨 BUILDER: Generating test files...")
+            files['src/App.test.tsx'] = self._generate_app_test()
+            files['src/setupTests.ts'] = self._generate_setup_tests()
+            print(f"  ✓ Generated: src/App.test.tsx, src/setupTests.ts")
+        except Exception as e:
+            print(f"  ⚠️  Warning: Test file generation skipped: {e}")
+            # Generate minimal test file as fallback
+            files['src/App.test.tsx'] = """import React from 'react';
+import { render } from '@testing-library/react';
+import App from './App';
+
+test('renders app without crashing', () => {
+  render(<App />);
+});
+"""
         
         # Generate README
         print(f"🔨 BUILDER: Generating README.md...")
@@ -257,7 +271,8 @@ class BuilderAgent:
         print(f"🔨 BUILDER: Generating deployment config files...")
         files['vercel.json'] = self._generate_vercel_config()
         files['netlify.toml'] = self._generate_netlify_config()
-        print(f"  ✓ Generated: vercel.json, netlify.toml")
+        files['.npmrc'] = self._generate_npmrc()
+        print(f"  ✓ Generated: vercel.json, netlify.toml, .npmrc")
         
         return files
     
@@ -270,21 +285,22 @@ class BuilderAgent:
         Validates: Requirements 13.2
         """
         dependencies = {
-            "react": "^18.3.1",
-            "react-dom": "^18.3.1",
-            "react-router-dom": "^6.26.0",
+            "react": "^18.2.0",
+            "react-dom": "^18.2.0",
+            "react-router-dom": "^6.8.0",
             "react-scripts": "5.0.1",
-            "typescript": "^5.5.4",
-            "@types/react": "^18.3.5",
-            "@types/react-dom": "^18.3.0",
-            "web-vitals": "^4.2.3"
+            "typescript": "4.9.5",
+            "@types/react": "^18.0.28",
+            "@types/react-dom": "^18.0.11",
+            "web-vitals": "^3.5.0",
+            "ajv": "^8.12.0"  # Explicitly add ajv for compatibility with react-scripts 5.0.1
         }
         
         dev_dependencies = {
-            "@testing-library/jest-dom": "^6.5.0",
-            "@testing-library/react": "^16.0.1",
-            "@testing-library/user-event": "^14.5.2",
-            "@types/jest": "^29.5.12"
+            "@testing-library/jest-dom": "^6.1.5",
+            "@testing-library/react": "^14.1.2",
+            "@testing-library/user-event": "^14.5.1",
+            "@types/jest": "^29.5.8"
         }
         scripts = {
             "start": "react-scripts start",
@@ -397,7 +413,7 @@ export default App;
         return """import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import App from './App.tsx';
+import App from './App';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
@@ -548,7 +564,12 @@ code {
             
         Validates: Requirements 10.4, 10.5
         """
-        prompt = self._create_component_generation_prompt(component, plan)
+        try:
+            prompt = self._create_component_generation_prompt(component, plan)
+        except Exception as e:
+            # If prompt generation fails, use fallback template
+            print(f"  ⚠️  Warning: Prompt generation failed, using template: {e}")
+            return self._generate_basic_component_template(component)
         
         try:
             # Check rate limit before making LLM call
@@ -563,6 +584,7 @@ code {
             return self._extract_code_from_response(response_text)
         except Exception as e:
             # Fallback to template if LLM call fails
+            print(f"  ⚠️  Warning: LLM call failed, using template: {e}")
             return self._generate_basic_component_template(component)
     
     def _create_page_generation_prompt(self, page: PageSpec, plan: Plan) -> str:
@@ -571,7 +593,13 @@ code {
         
         Validates: Requirements 13.3
         """
-        components_list = [comp.name for comp in plan.components if comp.name in page.components]
+        # Validate page attributes
+        if not page:
+            raise ValueError("Page specification is None")
+        if not page.name:
+            raise ValueError("Page name is required")
+        
+        components_list = [comp.name for comp in plan.components if comp and comp.name and comp.name in (page.components or [])]
         
         # Check if this page needs backend integration
         backend_info = ""
@@ -582,9 +610,20 @@ code {
             if relevant_endpoints:
                 endpoint_details = []
                 for ep in relevant_endpoints:
-                    endpoint_details.append(
-                        f"  - {ep['method']} {ep['path']}: {ep.get('description', 'API endpoint')}"
-                    )
+                    # Skip None endpoints
+                    if ep is None:
+                        continue
+                    # Handle both dict and object endpoints
+                    if isinstance(ep, dict):
+                        method = ep.get('method', 'GET')
+                        path = ep.get('path', '')
+                        desc = ep.get('description', 'API endpoint')
+                    else:
+                        method = getattr(ep, 'method', 'GET') or 'GET'
+                        path = getattr(ep, 'path', '') or ''
+                        desc = getattr(ep, 'description', 'API endpoint') or 'API endpoint'
+                    
+                    endpoint_details.append(f"  - {method} {path}: {desc}")
                 
                 backend_info = f"""
 
@@ -621,16 +660,42 @@ const handleSubmit = async (data: FormData) => {{
 ```
 """
         
-        # Generate example imports for clarity
-        example_imports = '\n'.join([f"import {comp} from '../components/{comp}.tsx';" for comp in components_list])
+        # Generate example imports for clarity (NO extensions for TypeScript 4.9.5)
+        example_imports = '\n'.join([f"import {comp} from '../components/{comp}';" for comp in components_list])
         
         prompt = f"""
+🚀 PRODUCTION DEPLOYMENT CONTEXT:
+This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
+This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
+The application will be used by real users, so code quality, error handling, and user experience are CRITICAL.
+
 Generate a BEAUTIFUL, PRODUCTION-READY React TypeScript page component.
 
 Page: {page.name} | Route: {page.route}
 Description: {page.description}
 Components to use: {', '.join(components_list)}
+
+IMPORTANT: Component Usage Guidelines
+- These components are already generated and have specific prop interfaces
+- Use components WITHOUT props first: <ComponentName />
+- If you need to pass props, only pass props that exist in the component's interface
+- Use the correct component for the correct purpose:
+  * MenuItem = individual menu items (name, description, price)
+  * MenuSection = container for multiple items (title, items array)
+  * MenuCategory = category group (title, items)
+  * Card = display card (title, description, image)
+- DO NOT pass props that don't exist - this causes TypeScript build errors
+- When in doubt, use components without props - they work standalone
+
 {backend_info}
+
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL: TypeScript 4.9.5 Configuration
+═══════════════════════════════════════════════════════════════════════════════
+- TypeScript version: 4.9.5 (EXACT - compatible with react-scripts 5.0.1)
+- Use TypeScript 4.9.5 syntax ONLY (no TypeScript 5.x features)
+- All imports MUST NOT include file extensions
+- TypeScript 4.9.5 with react-scripts 5.0.1 requires imports WITHOUT extensions
 
 ═══════════════════════════════════════════════════════════════════════════════
 🚨 CRITICAL FILE STRUCTURE (MEMORIZE THIS):
@@ -639,10 +704,10 @@ Components to use: {', '.join(components_list)}
 THIS FILE LOCATION: src/pages/{page.name}.tsx
 COMPONENTS LOCATION: src/components/ComponentName.tsx
 
-CORRECT IMPORT PATH: '../components/ComponentName.tsx'
-❌ WRONG: './ComponentName.tsx' (same directory - WRONG!)
-❌ WRONG: './ComponentName' (missing extension - WRONG!)
-✅ CORRECT: '../components/ComponentName.tsx'
+CORRECT IMPORT PATH: '../components/ComponentName' (NO .tsx extension)
+❌ WRONG: '../components/ComponentName.tsx' (includes extension - WRONG for TypeScript 4.9.5!)
+❌ WRONG: './ComponentName.tsx' (wrong path AND extension - WRONG!)
+✅ CORRECT: '../components/ComponentName' (NO extension - TypeScript 4.9.5 resolves automatically)
 
 EXACT IMPORTS TO USE:
 ```typescript
@@ -782,14 +847,17 @@ USE INLINE STYLES WITH MODERN DESIGN:
 🚫 CRITICAL RULES - NEVER BREAK THESE:
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. ✅ Import from '../components/Name.tsx' (NOT './Name.tsx')
+1. ✅ Import from '../components/Name' (NO .tsx extension - TypeScript 4.9.5 resolves automatically)
 2. ✅ Use inline styles with modern gradients and shadows
 3. ✅ Add real, meaningful content
 4. ✅ Make it visually stunning
 5. ❌ NEVER redefine imported components
 6. ❌ NEVER use boring, plain styles
 7. ❌ NEVER use placeholder content
-8. ❌ NEVER forget .tsx extension in imports
+8. ❌ NEVER include .tsx extension in imports (TypeScript 4.9.5 resolves automatically)
+9. ❌ NEVER pass props that don't exist in component interface (causes TypeScript build errors!)
+10. ✅ Use correct component for correct purpose (MenuItem for items, MenuSection for sections)
+11. ✅ If unsure about props, use component without props: <ComponentName />
 
 Return ONLY the complete TypeScript React component code.
 NO explanations. NO markdown. NO comments about file locations.
@@ -810,12 +878,24 @@ NO explanations. NO markdown. NO comments about file locations.
         Validates: Requirements 13.3
         """
         relevant_endpoints = []
-        page_name_lower = page.name.lower()
-        page_desc_lower = page.description.lower()
+        if not backend_spec or not backend_spec.endpoints:
+            return relevant_endpoints
+        
+        page_name_lower = (page.name or "").lower()
+        page_desc_lower = (page.description or "").lower()
         
         for endpoint in backend_spec.endpoints:
-            endpoint_path = endpoint.get('path', '').lower()
-            endpoint_desc = endpoint.get('description', '').lower()
+            # Skip None endpoints
+            if endpoint is None:
+                continue
+            
+            # Handle both dict and object endpoints
+            if isinstance(endpoint, dict):
+                endpoint_path = endpoint.get('path', '').lower() if endpoint else ''
+                endpoint_desc = endpoint.get('description', '').lower() if endpoint else ''
+            else:
+                endpoint_path = (getattr(endpoint, 'path', '') or '').lower()
+                endpoint_desc = (getattr(endpoint, 'description', '') or '').lower()
             
             # Match endpoints to pages based on naming and description
             # Contact page -> contact endpoint
@@ -845,35 +925,75 @@ NO explanations. NO markdown. NO comments about file locations.
         
         Validates: Requirements 13.3
         """
+        # Validate component attributes
+        if not component:
+            raise ValueError("Component specification is None")
+        if not component.name:
+            raise ValueError("Component name is required")
+        
         props_info = ""
         if component.props:
             props_list = [f"{key}: {value}" for key, value in component.props.items()]
-            props_info = f"Props: {', '.join(props_list)}"
+            props_info = f"Props (ALL MUST BE OPTIONAL): {', '.join(props_list)} - Make all props optional with default values so component works as <{component.name} />"
         
         # Check if this component needs backend integration (e.g., forms)
         backend_info = ""
-        component_name_lower = component.name.lower()
-        component_desc_lower = component.description.lower()
+        component_name_lower = (component.name or "").lower()
+        component_desc_lower = (component.description or "").lower()
         
-        if plan.backend_logic and plan.backend_logic.endpoints:
+        # Safely check backend_logic and endpoints
+        try:
+            has_backend = plan and plan.backend_logic and hasattr(plan.backend_logic, 'endpoints') and plan.backend_logic.endpoints
+        except (AttributeError, TypeError):
+            has_backend = False
+        
+        if has_backend:
             # Check if this is a form component that needs API integration
             is_form_component = any(keyword in component_name_lower or keyword in component_desc_lower 
                                    for keyword in ['form', 'contact', 'submit', 'search', 'input'])
             
             if is_form_component:
-                # Find relevant endpoints
+                # Find relevant endpoints with safe access
                 relevant_endpoints = []
-                for ep in plan.backend_logic.endpoints:
-                    ep_path = ep.get('path', '').lower()
-                    if any(keyword in ep_path for keyword in ['contact', 'submit', 'search', 'validate']):
-                        relevant_endpoints.append(ep)
+                try:
+                    endpoints_list = plan.backend_logic.endpoints if plan.backend_logic and plan.backend_logic.endpoints else []
+                    for ep in endpoints_list:
+                        # Skip None endpoints
+                        if ep is None:
+                            continue
+                        # Handle both dict and object endpoints
+                        try:
+                            if isinstance(ep, dict):
+                                ep_path = ep.get('path', '').lower() if ep else ''
+                            else:
+                                ep_path = (getattr(ep, 'path', '') or '').lower()
+                            
+                            if any(keyword in ep_path for keyword in ['contact', 'submit', 'search', 'validate']):
+                                relevant_endpoints.append(ep)
+                        except (AttributeError, TypeError, KeyError) as e:
+                            # Skip this endpoint if we can't access it
+                            continue
+                except (AttributeError, TypeError) as e:
+                    # If we can't access endpoints, just skip backend integration
+                    relevant_endpoints = []
                 
                 if relevant_endpoints:
                     endpoint_details = []
                     for ep in relevant_endpoints:
-                        endpoint_details.append(
-                            f"  - {ep['method']} {ep['path']}: {ep.get('description', 'API endpoint')}"
-                        )
+                        # Skip None endpoints
+                        if ep is None:
+                            continue
+                        # Handle both dict and object endpoints
+                        if isinstance(ep, dict):
+                            method = ep.get('method', 'GET')
+                            path = ep.get('path', '')
+                            desc = ep.get('description', 'API endpoint')
+                        else:
+                            method = getattr(ep, 'method', 'GET') or 'GET'
+                            path = getattr(ep, 'path', '') or ''
+                            desc = getattr(ep, 'description', 'API endpoint') or 'API endpoint'
+                        
+                        endpoint_details.append(f"  - {method} {path}: {desc}")
                     
                     backend_info = f"""
 
@@ -890,6 +1010,11 @@ Requirements:
 """
         
         prompt = f"""
+🚀 PRODUCTION DEPLOYMENT CONTEXT:
+This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
+This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
+The component will be used by real users in production, so code quality, error handling, and user experience are CRITICAL.
+
 Generate a React TypeScript functional component with the following specifications:
 
 Component Name: {component.name}
@@ -898,7 +1023,16 @@ Description: {component.description}
 {props_info}
 {backend_info}
 
-CRITICAL DEPLOYMENT REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL: TypeScript 4.9.5 Configuration
+═══════════════════════════════════════════════════════════════════════════════
+- TypeScript version: 4.9.5 (EXACT - compatible with react-scripts 5.0.1)
+- Use TypeScript 4.9.5 syntax ONLY (no TypeScript 5.x features)
+- All imports MUST NOT include file extensions
+- TypeScript 4.9.5 with react-scripts 5.0.1 requires imports WITHOUT extensions
+
+CRITICAL DEPLOYMENT REQUIREMENTS (TypeScript 4.9.5):
+- TypeScript version: 4.9.5 (EXACT version - compatible with react-scripts 5.0.1)
 - Write PRODUCTION-READY code that will deploy successfully on Vercel/Netlify
 - Use ONLY modern, stable React patterns (React 18+)
 - Avoid deprecated APIs and patterns
@@ -906,9 +1040,61 @@ CRITICAL DEPLOYMENT REQUIREMENTS:
 - Write clean, minimal code without unnecessary dependencies
 - Ensure all imports are from stable, maintained packages
 - Follow React best practices for performance and accessibility
+- Use TypeScript 4.9.5 syntax ONLY (no TypeScript 5.x features)
+
+🚨 DEPLOYMENT BUILD PROCESS - UNDERSTAND THIS:
+- Vercel/Netlify runs: npm install → npm run build → deploy
+- TypeScript compiler (tsc) checks ALL files during "npm run build"
+- ANY TypeScript error = BUILD FAILURE = Deployment BLOCKED
+- Common errors that break deployment:
+  * TS2322: Property 'X' does not exist on type 'ComponentProps' (prop mismatch)
+  * TS2739: Type 'empty object' is missing properties from type 'ComponentProps' (REQUIRED PROPS ERROR!)
+  * TS2307: Cannot find module (wrong import path)
+  * TS2339: Property does not exist (missing import or wrong type)
+- These errors prevent the app from being deployed
+- Users see: "Error: Command 'npm run build' exited with 1"
+- This is why ALL props must be optional and match component interfaces
+
+🚨 CRITICAL ERROR EXAMPLE - TS2739 (THIS BREAKS DEPLOYMENT):
+❌ WRONG (causes TS2739 error during build):
+```typescript
+interface HeaderProps {{
+  logoUrl: string;  // ❌ Required - WRONG! Causes TS2739
+  navLinks: string;  // ❌ Required - WRONG! Causes TS2739
+}}
+const Header: React.FC<HeaderProps> = ({{ logoUrl, navLinks }}) => {{
+  return <div>{{logoUrl}}</div>;
+}};
+// When page uses: <Header />
+// TypeScript Error: TS2739: Type '{{}}' is missing properties from type 'HeaderProps': logoUrl, navLinks
+// Result: BUILD FAILS → Deployment BLOCKED → User sees error
+```
+
+✅ CORRECT (works with <Header />):
+```typescript
+interface HeaderProps {{
+  logoUrl?: string;  // ✅ Optional - CORRECT!
+  navLinks?: string;  // ✅ Optional - CORRECT!
+}}
+const Header: React.FC<HeaderProps> = ({{
+  logoUrl = '/logo.png',  // ✅ Default value
+  navLinks = []  // ✅ Default value
+}}) => {{
+  return <div>{{logoUrl}}</div>;
+}};
+// Now <Header /> works perfectly - no TypeScript errors
+// Result: BUILD SUCCEEDS → Deployment SUCCESS
+```
+
+CRITICAL RULE: EVERY prop in EVERY interface MUST have a ? mark (optional)
+- ❌ WRONG: propName: string
+- ✅ CORRECT: propName?: string
+- This is NOT optional - it's MANDATORY for deployment success
 
 Requirements:
 - Use TypeScript with proper interface definitions for props
+- CRITICAL: ALL props MUST be optional (propName?: type) with default values
+- Components MUST work without any props: <ComponentName />
 - Create a reusable, well-structured component
 - Include proper CSS classes for styling
 - Make the component accessible (ARIA attributes where appropriate)
@@ -919,11 +1105,12 @@ Requirements:
 
 Component Structure:
 - Import React (and useState if needed)
-- Define TypeScript interface for props (if any)
+- Define TypeScript interface for props with ALL props optional: propName?: type
+- Use default parameter values: const Component: React.FC<Props> = ({{ propName = 'default' }}) => {{}}
 - Define the functional component with proper typing
 - Export as default
 - Use semantic HTML elements
-- Include proper error handling for props
+- Include proper error handling
 {"- Include form submission handler with API call" if backend_info else ""}
 
 CODE QUALITY STANDARDS:
@@ -934,28 +1121,533 @@ CODE QUALITY STANDARDS:
 - Clean, readable code with proper indentation
 - Minimal dependencies - use native browser APIs when possible
 
-CRITICAL IMPORT RULES:
-- ALWAYS include .tsx extension in imports: import Component from './Component.tsx'
-- For components: import Header from '../components/Header.tsx'
-- For pages: import HomePage from './pages/HomePage.tsx'
-- This prevents "Module not found" errors during build
+CRITICAL IMPORT RULES (TypeScript 4.9.5):
+- NEVER include file extensions in imports - TypeScript 4.9.5 resolves them automatically
+- CORRECT: import Component from './Component' (NO .tsx extension)
+- CORRECT: import Header from '../components/Header' (NO .tsx extension)
+- CORRECT: import HomePage from './pages/HomePage' (NO .tsx extension)
+- WRONG: import Component from './Component.tsx' (DO NOT include .tsx)
+- This is the standard TypeScript 4.9.5 behavior with react-scripts 5.0.1
+
+🚨 CRITICAL: TYPESCRIPT SYNTAX RULES - AVOID SYNTAX ERRORS:
+═══════════════════════════════════════════════════════════════════════════════
+
+These syntax mistakes cause "SyntaxError: Unexpected token" and break deployment:
+
+1. FUNCTION TYPE SYNTAX:
+   ❌ WRONG: prop?: function;  // 'function' is NOT valid TypeScript syntax!
+   ❌ WRONG: prop?: Function;  // Lowercase 'function' - invalid!
+   ✅ CORRECT: prop?: () => void;  // Arrow function type - CORRECT!
+   ✅ CORRECT: prop?: (data: FormData) => void;  // With parameters - CORRECT!
+
+2. INTERFACE PROPERTY SYNTAX:
+   ❌ WRONG: interface Props {{ prop: string }}  // Missing semicolon
+   ✅ CORRECT: interface Props {{ prop: string; }}  // Must have semicolon
+   ❌ WRONG: interface Props {{ prop string }}  // Missing colon
+   ✅ CORRECT: interface Props {{ prop: string; }}  // Must have colon
+
+3. OPTIONAL PROPERTY SYNTAX:
+   ❌ WRONG: interface Props {{ prop?: string }}  // Missing semicolon
+   ✅ CORRECT: interface Props {{ prop?: string; }}  // Must have semicolon
+   ❌ WRONG: interface Props {{ prop? string }}  // Missing colon
+   ✅ CORRECT: interface Props {{ prop?: string; }}  // Must have colon AND semicolon
+
+4. COMPONENT FUNCTION SYNTAX:
+   ❌ WRONG: const Component = (props) => { ... }  // Missing type annotation
+   ✅ CORRECT: const Component: React.FC<Props> = (props) => { ... }
+   ❌ WRONG: const Component: React.FC<Props> = props => { ... }  // Missing parentheses
+   ✅ CORRECT: const Component: React.FC<Props> = (props) => { ... }
+
+5. DESTRUCTURING WITH DEFAULTS:
+   ❌ WRONG: const Component = ({{ prop }}) => {{ ... }}  // No default, prop might be undefined
+   ✅ CORRECT: const Component = ({{ prop = 'default' }}) => {{ ... }}  // Has default
+   ❌ WRONG: const Component = ({{ prop = }}) => {{ ... }}  // Incomplete default
+   ✅ CORRECT: const Component = ({{ prop = 'value' }}) => {{ ... }}  // Complete default
+
+6. TYPE ANNOTATIONS:
+   ❌ WRONG: const [state, setState] = useState();  // Missing type
+   ✅ CORRECT: const [state, setState] = useState<string>('');
+   ❌ WRONG: const handleClick = (e) => { ... }  // Missing event type
+   ✅ CORRECT: const handleClick = (e: React.MouseEvent) => { ... }
+
+7. JSX SYNTAX:
+   ❌ WRONG: <div style={{{{ color: "red" }}}}>  // Missing closing tag
+   ✅ CORRECT: <div style={{{{ color: "red" }}}}>Content</div>
+   ❌ WRONG: <Component prop={{{{value}}}}>  // Missing closing tag
+   ✅ CORRECT: <Component prop={{{{value}}}} />  // Self-closing OR <Component>Content</Component>
+
+8. STRING LITERALS:
+   ❌ WRONG: const text = 'Hello';  // In JSX, use double quotes or template literals
+   ✅ CORRECT: const text = "Hello";  // Or use template literals: `Hello`
+   ❌ WRONG: style={{{{ color: 'red' }}}}  // Single quotes in object - can cause issues
+   ✅ CORRECT: style={{{{ color: "red" }}}}  // Double quotes in object
+
+9. OBJECT SYNTAX:
+   ❌ WRONG: const obj = {{ key: value }}  // Missing semicolon (in some contexts)
+   ✅ CORRECT: const obj = {{ key: value }};  // Has semicolon
+   ❌ WRONG: style={{{{ color: 'red'  // Missing closing brace
+   ✅ CORRECT: style={{{{ color: "red" }}}}  // Complete braces
+
+10. ARRAY SYNTAX:
+    ❌ WRONG: const arr = [1, 2, 3]  // Missing semicolon (in some contexts)
+    ✅ CORRECT: const arr = [1, 2, 3];  // Has semicolon
+    ❌ WRONG: items.map(item => <Item />)  // Missing key prop
+    ✅ CORRECT: items.map(item => <Item key={{{{item.id}}}} />)  // Has key
+
+SYNTAX CHECKLIST BEFORE GENERATING CODE:
+- [ ] All interface properties end with semicolon: prop: type;
+- [ ] All optional properties use ?: prop?: type;
+- [ ] Function types use arrow syntax: () => void (NOT 'function')
+- [ ] Component destructuring has defaults: ({{ prop = 'default' }})
+- [ ] All JSX tags are properly closed: <Tag /> or <Tag>Content</Tag>
+- [ ] All object literals have proper braces: {{ key: "value" }}
+- [ ] All statements end with semicolons where needed
+- [ ] No missing colons in type annotations: prop: type (NOT prop type)
+- [ ] No missing parentheses in function parameters: (props) => (NOT props =>)
+- [ ] All string literals use consistent quotes: "string" or `template`
+
+🚨 CRITICAL: FUNCTION TYPE SYNTAX - THIS BREAKS DEPLOYMENT:
+❌ WRONG (causes SyntaxError during build):
+```typescript
+interface ContactFormProps {{
+  onSubmit?: function;  // ❌ 'function' is NOT valid TypeScript syntax!
+}}
+// SyntaxError: Unexpected token - BUILD FAILS → Deployment BLOCKED
+```
+
+✅ CORRECT (valid TypeScript syntax):
+```typescript
+interface ContactFormProps {{
+  onSubmit?: () => void;  // ✅ Arrow function type - CORRECT!
+}}
+// OR with parameters:
+interface ContactFormProps {{
+  onSubmit?: (data: FormData) => void;  // ✅ Arrow function with params - CORRECT!
+}}
+```
+
+CRITICAL RULES FOR FUNCTION TYPES:
+- ❌ NEVER use: propName?: function (invalid syntax - causes SyntaxError)
+- ❌ NEVER use: propName?: Function (lowercase 'function' - invalid)
+- ✅ ALWAYS use: propName?: () => void (arrow function type - CORRECT)
+- ✅ OR use: propName?: (param: type) => void (arrow function with params - CORRECT)
+- Function types default to: undefined (not a function call)
+
+CRITICAL: PROPS HANDLING - MAKE ALL PROPS OPTIONAL
+- ALL props MUST be optional with default values: propName?: type
+- Components MUST work without any props: <ComponentName />
+- Use TypeScript optional syntax: propName?: string (NOT propName: string)
+- Provide sensible default values in function parameters
+- Components should be self-contained and work standalone
+- Example:
+  ```typescript
+  interface HeroSectionProps {{
+    heading?: string;
+    subheading?: string;
+    imageUrl?: string;
+  }}
+  
+  const HeroSection: React.FC<HeroSectionProps> = ({{
+    heading = 'Welcome',
+    subheading = 'Default subheading',
+    imageUrl = '/default-image.jpg'
+  }}) => {{
+    return (
+      <div>
+        <h1>{{heading}}</h1>
+        <p>{{subheading}}</p>
+        <img src={{imageUrl}} alt="Hero" />
+      </div>
+    );
+  }};
+  ```
+- This ensures components can be used in pages without props: <HeroSection />
 
 CRITICAL: NEVER REDEFINE IMPORTED COMPONENTS
 - If you import a component, DO NOT define it again in the same file
 - Example of ERROR (DO NOT DO THIS):
   ```
-  import Header from '../components/Header.tsx';  // Imported
-  const Header = () => { ... };  // ERROR: Redeclaration!
+  import Header from '../components/Header';  // Imported (NO .tsx extension)
+  const Header = () => {{ ... }};  // ERROR: Redeclaration!
   ```
 - Each component should be defined ONLY ONCE in its own file
 - Pages should ONLY import and use components, never redefine them
 - If a component is imported, use it directly - do not create a local version
+- TypeScript 4.9.5 with react-scripts 5.0.1 requires imports WITHOUT extensions
 
 COMPONENT USAGE RULES:
 - Import components at the top of the file
-- Use imported components in JSX: <Header />
+- Use imported components in JSX: <Header /> (NO props required - components work standalone)
+- Components are self-contained with default values for all props
 - Never create placeholder/dummy versions of imported components
 - Each component lives in its own file (src/components/ComponentName.tsx)
+- If a component needs customization, pass optional props: <Header title="Custom" />
+
+CRITICAL: Components MUST work without props
+- All components should be usable as: <ComponentName />
+- Props are optional and have default values
+- This ensures pages can use components without knowing their prop structure
+
+CRITICAL: COMPONENT PROP MATCHING - AVOID TYPESCRIPT ERRORS
+- Before using a component with props, you MUST understand its interface
+- Components have optional props, but if you pass props, they MUST match the component's interface
+- DO NOT pass props that don't exist in the component's interface - this causes TypeScript errors
+- If a component doesn't have a prop you need, use the component WITHOUT that prop, or use a different component
+- Example of ERROR (DO NOT DO THIS):
+  ```typescript
+  // If MenuSection interface is: {{ title?: string; items?: MenuItem[] }}
+  // WRONG:
+  <MenuSection name="Pizza" description="..." />  // 'name' and 'description' don't exist!
+  // CORRECT:
+  <MenuSection title="Appetizers" items={{appetizers}} />  // Matches the interface
+  // OR use MenuItem for individual items:
+  <MenuItem name="Pizza" description="..." />  // If MenuItem has these props
+  ```
+- Always check: Does the component interface include the prop you're trying to pass?
+- If unsure, use the component WITHOUT props: <ComponentName />
+- Components work standalone with default values
+
+COMPONENT SELECTION RULES - USE THE RIGHT COMPONENT:
+- Use the RIGHT component for the RIGHT purpose
+- MenuSection = container for multiple menu items (typically has: title, items array)
+- MenuItem = individual menu item (typically has: name, description, price, image)
+- MenuCategory = category header/group (typically has: title, description, items)
+- Card = display card (typically has: title, description, image, icon)
+- Don't mix them up - use MenuItem for items, MenuSection for sections
+- If you need to display individual items, use MenuItem component
+- If you need to display a section/container, use MenuSection component
+- When in doubt, check component names: Item = individual, Section = container, Category = group
+
+CRITICAL: Components MUST work without props
+- All components should be usable as: <ComponentName />
+- Props are optional and have default values
+- This ensures pages can use components without knowing their prop structure
+
+═══════════════════════════════════════════════════════════════════════════════
+🚨 DEPLOYMENT FAILURE SCENARIOS - AVOID THESE AT ALL COSTS:
+═══════════════════════════════════════════════════════════════════════════════
+
+These errors cause "npm run build" to FAIL on Vercel/Netlify, preventing deployment:
+
+SCENARIO A: PROP MISMATCH ERROR (MOST COMMON - CAUSES BUILD FAILURE)
+❌ ERROR THAT BREAKS DEPLOYMENT:
+```typescript
+// MenuSection component interface: {{ title?: string; items?: MenuItem[] }}
+// Page tries to use it like this:
+<MenuSection name="Pizza" description="Delicious pizza" price="$10" />
+// TypeScript Error: TS2322: Property 'name' does not exist on type 'MenuSectionProps'
+// Result: BUILD FAILS → Deployment BLOCKED → User sees error
+```
+
+✅ CORRECT APPROACH:
+```typescript
+// Option 1: Use component WITHOUT props (safest)
+<MenuSection />
+
+// Option 2: Use correct props that exist in interface
+<MenuSection title="Appetizers" items={appetizersArray} />
+
+// Option 3: Use correct component for individual items
+<MenuItem name="Pizza" description="Delicious pizza" price="$10" />
+```
+
+SCENARIO B: WRONG COMPONENT FOR WRONG PURPOSE
+❌ ERROR THAT BREAKS DEPLOYMENT:
+```typescript
+// Trying to display individual menu items using MenuSection:
+const menuItems = [
+  {{ name: "Pizza", price: "$10" }},
+  {{ name: "Burger", price: "$8" }}
+];
+menuItems.map(item => (
+  <MenuSection name={item.name} price={item.price} />  // WRONG! MenuSection doesn't have 'name' prop
+));
+// TypeScript Error: TS2322: Property 'name' does not exist
+// Result: BUILD FAILS → Deployment BLOCKED
+```
+
+✅ CORRECT APPROACH:
+```typescript
+// Use MenuItem for individual items:
+menuItems.map(item => (
+  <MenuItem key={item.name} name={item.name} price={item.price} />
+));
+
+// OR use MenuSection to contain multiple items:
+<MenuSection title="Our Menu" items={menuItems} />
+```
+
+SCENARIO C: ASSUMING PROPS EXIST WITHOUT CHECKING
+❌ ERROR THAT BREAKS DEPLOYMENT:
+```typescript
+// Assuming Card component has 'imageUrl' prop:
+<Card title="Feature" imageUrl="/images/feature.jpg" />
+// But Card interface is: {{ title?: string; description?: string; icon?: string }}
+// TypeScript Error: TS2322: Property 'imageUrl' does not exist
+// Result: BUILD FAILS → Deployment BLOCKED
+```
+
+✅ CORRECT APPROACH:
+```typescript
+// Check component interface first, then use correct prop:
+<Card title="Feature" icon="🚀" />  // Uses 'icon' which exists in interface
+
+// OR use component without props:
+<Card />  // Works with default values
+```
+
+DEPLOYMENT BUILD PROCESS CONTEXT:
+- Vercel/Netlify runs: npm install → npm run build
+- TypeScript compiler checks ALL files during build
+- ANY TypeScript error = BUILD FAILURE = NO DEPLOYMENT
+- Errors like "Property 'X' does not exist" are caught at BUILD TIME
+- These errors prevent the app from being deployed
+- Users see: "Error: Command 'npm run build' exited with 1"
+- This is why prop matching is CRITICAL - it prevents deployment failures
+
+═══════════════════════════════════════════════════════════════════════════════
+💡 REAL-WORLD SCENARIOS & EXAMPLES:
+═══════════════════════════════════════════════════════════════════════════════
+
+SCENARIO 1: Simple Display Component (ALL PROPS OPTIONAL)
+```typescript
+interface CardProps {{
+  title?: string;
+  description?: string;
+  icon?: string;
+}}
+
+const Card: React.FC<CardProps> = ({{ 
+  title = 'Default Title',
+  description = 'Default description text',
+  icon
+}}) => {{
+  return (
+    <div style={{{{ 
+      background: 'white', 
+      padding: '30px', 
+      borderRadius: '15px',
+      boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
+    }}}}>
+      {{{{icon && <div style={{{{ fontSize: '3rem', marginBottom: '15px' }}}}>{{{{icon}}}}</div>}}}}
+      <h3 style={{{{ fontSize: '1.5rem', marginBottom: '10px', color: '#2d3748' }}}}>{{{{title}}}}</h3>
+      <p style={{{{ color: '#718096', lineHeight: '1.6' }}}}>{{{{description}}}}</p>
+    </div>
+  );
+}};
+
+export default Card;
+// Usage: <Card /> or <Card title="Custom" description="Custom desc" />
+```
+
+SCENARIO 2: Form Component with API Integration (CORRECT FUNCTION TYPE)
+```typescript
+// ✅ CORRECT: Function type using arrow function syntax
+interface ContactFormProps {{
+  onSubmit?: (data: FormData) => void;  // ✅ Arrow function type - CORRECT!
+}}
+
+// ❌ WRONG (DO NOT DO THIS):
+// interface ContactFormProps {{
+//   onSubmit?: function;  // ❌ 'function' is NOT valid TypeScript syntax!
+// }}
+
+const ContactForm: React.FC<ContactFormProps> = ({{ onSubmit }}) => {{
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {{
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    try {{
+      const response = await fetch('/api/contact', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{{{ name, email, message }}}})
+      }});
+      
+      if (!response.ok) throw new Error('Submission failed');
+      // Handle success
+      if (onSubmit) onSubmit({{{{ name, email, message }}}} as any);
+    }} catch (err) {{
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    }} finally {{
+      setLoading(false);
+    }}
+  }};
+
+  return (
+    <form onSubmit={{{{handleSubmit}}}} style={{{{ maxWidth: '600px', margin: '0 auto' }}}}>
+      {{{{error && <div style={{{{ color: 'red', marginBottom: '15px' }}}}>{{{{error}}}}</div>}}}}
+      <input 
+        type="text" 
+        value={{{{name}}}} 
+        onChange={{{{(e) => setName(e.target.value)}}}} 
+        placeholder="Your Name"
+        required
+      />
+      <input 
+        type="email" 
+        value={{{{email}}}} 
+        onChange={{{{(e) => setEmail(e.target.value)}}}} 
+        placeholder="Your Email"
+        required
+      />
+      <textarea 
+        value={{{{message}}}} 
+        onChange={{{{(e) => setMessage(e.target.value)}}}} 
+        placeholder="Your Message"
+        required
+      />
+      <button type="submit" disabled={{{{loading}}}}>
+        {{{{loading ? 'Submitting...' : 'Submit'}}}}
+      </button>
+    </form>
+  );
+}};
+
+export default ContactForm;
+```
+
+SCENARIO 3: Navigation Component
+```typescript
+import {{ Link as LinkComponent }} from 'react-router-dom';
+
+interface NavProps {{
+  items?: Array<{{ label: string; path: string }}>;
+}}
+
+const Navigation: React.FC<NavProps> = ({{ items = [] }}) => {{
+  return (
+    <nav style={{{{ 
+      background: '#2d3748', 
+      padding: '20px',
+      display: 'flex',
+      gap: '30px',
+      justifyContent: 'center'
+    }}}}>
+      {{{{items.map((item) => (
+        <LinkComponent 
+          key={{{{item.path}}}} 
+          to={{{{item.path}}}}
+          style={{{{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}}}
+        >
+          {{{{item.label}}}}
+        </LinkComponent>
+      ))}}}}
+    </nav>
+  );
+}};
+
+export default Navigation;
+```
+
+🚨 DEPLOYMENT FAILURE SCENARIOS - AVOID THESE AT ALL COSTS:
+═══════════════════════════════════════════════════════════════════════════════
+
+These errors cause "npm run build" to FAIL on Vercel/Netlify, preventing deployment:
+
+SCENARIO A: REQUIRED PROPS IN INTERFACE (CAUSES BUILD FAILURE)
+❌ ERROR THAT BREAKS DEPLOYMENT:
+```typescript
+// Component with required props:
+interface CardProps {{
+  title: string;  // ❌ Required prop - WRONG!
+  description: string;  // ❌ Required prop - WRONG!
+}}
+// When page tries to use: <Card />
+// TypeScript Error: TS2741: Property 'title' is missing
+// Result: BUILD FAILS → Deployment BLOCKED
+```
+
+✅ CORRECT APPROACH:
+```typescript
+// ALL props optional with defaults:
+interface CardProps {{
+  title?: string;  // ✅ Optional
+  description?: string;  // ✅ Optional
+}}
+const Card: React.FC<CardProps> = ({{
+  title = 'Default Title',  // ✅ Default value
+  description = 'Default description'  // ✅ Default value
+}}) => {{ ... }};
+// Now <Card /> works perfectly - no TypeScript errors
+```
+
+SCENARIO B: MISSING DEFAULT VALUES (CAUSES RUNTIME ERRORS)
+❌ ERROR THAT BREAKS DEPLOYMENT:
+```typescript
+// Props optional but no defaults:
+const Card: React.FC<CardProps> = ({{ title, description }}) => {{
+  return <div>{{title}}</div>;  // ❌ title might be undefined!
+}};
+// Runtime error if title is undefined
+// Result: App crashes in production
+```
+
+✅ CORRECT APPROACH:
+```typescript
+// Always provide defaults:
+const Card: React.FC<CardProps> = ({{
+  title = 'Default Title',  // ✅ Always has a value
+  description = 'Default'  // ✅ Always has a value
+}}) => {{
+  return <div>{{title}}</div>;  // ✅ Safe - always defined
+}};
+```
+
+SCENARIO C: WRONG IMPORT EXTENSIONS (CAUSES BUILD FAILURE)
+❌ ERROR THAT BREAKS DEPLOYMENT:
+```typescript
+import Card from './Card.tsx';  // ❌ Includes .tsx extension
+// TypeScript Error: TS2307: Cannot find module './Card.tsx'
+// Result: BUILD FAILS → Deployment BLOCKED
+```
+
+✅ CORRECT APPROACH:
+```typescript
+import Card from './Card';  // ✅ NO extension - TypeScript 4.9.5 resolves automatically
+```
+
+DEPLOYMENT BUILD PROCESS CONTEXT:
+- Vercel/Netlify runs: npm install → npm run build → deploy
+- TypeScript compiler (tsc) checks ALL files during "npm run build"
+- ANY TypeScript error = BUILD FAILURE = NO DEPLOYMENT
+- Errors like "Property 'X' is missing" are caught at BUILD TIME
+- These errors prevent the app from being deployed
+- Users see: "Error: Command 'npm run build' exited with 1"
+- This is why ALL props must be optional with defaults
+
+COMMON PITFALLS TO AVOID (SYNTAX ERRORS):
+1. ❌ Importing with extensions: import Card from './Card.tsx' (WRONG!)
+2. ✅ Correct: import Card from './Card' (NO extension)
+3. ❌ Redefining imported components
+4. ❌ Using 'any' type for props
+5. ❌ Making props required when they should be optional
+6. ✅ ALL props MUST be optional: propName?: type (NOT propName: type)
+7. ✅ Components MUST work without props: <ComponentName />
+8. ❌ Missing default values for optional props (causes runtime errors)
+9. ❌ Missing error handling in async operations
+10. ❌ Not handling loading/error states
+11. ❌ Missing TypeScript interfaces for props
+12. ❌ Required props in interface (causes build failure when component used without props)
+13. ❌ Missing semicolons in interface properties: prop: string (WRONG - causes SyntaxError!)
+14. ✅ CORRECT: prop: string; (MUST have semicolon)
+15. ❌ Using 'function' as type: prop?: function (WRONG - causes SyntaxError!)
+16. ✅ CORRECT: prop?: () => void (MUST use arrow function syntax)
+17. ❌ Missing closing braces in object literals: {{ color: 'red' (WRONG - causes SyntaxError!)
+18. ✅ CORRECT: {{ color: "red" }} (MUST have closing braces)
+19. ❌ Missing closing tags in JSX: <div> (WRONG - causes SyntaxError!)
+20. ✅ CORRECT: <div>Content</div> or <div /> (MUST be closed)
+21. ❌ Missing colons in type annotations: prop string (WRONG - causes SyntaxError!)
+22. ✅ CORRECT: prop: string (MUST have colon)
+23. ❌ Missing parentheses in function parameters: props => (WRONG - causes SyntaxError!)
+24. ✅ CORRECT: (props) => (MUST have parentheses)
 
 Return ONLY the TypeScript React component code, no explanations or markdown formatting.
 """
@@ -1025,10 +1717,17 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
     
     def _generate_basic_page_template(self, page: PageSpec) -> str:
         """Generate basic page template as fallback"""
+        # Validate page attributes
+        if not page:
+            raise ValueError("Page specification is None")
+        if not page.name:
+            raise ValueError("Page name is required")
+        
+        page_name = page.name or "Page"
         component_imports = []
         component_usage = []
         
-        for comp_name in page.components:
+        for comp_name in (page.components or []):
             if comp_name not in ['Header', 'Footer']:  # These are handled separately
                 component_imports.append(f"import {comp_name} from '../components/{comp_name}';")
                 component_usage.append(f"        <{comp_name} />")
@@ -1039,7 +1738,7 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         return f"""import React from 'react';
 {imports_str}
 
-const {page.name}: React.FC = () => {{
+const {page_name}: React.FC = () => {{
   return (
     <div className="page-content">
       <div className="container">
@@ -1051,36 +1750,274 @@ const {page.name}: React.FC = () => {{
   );
 }};
 
-export default {page.name};
+export default {page_name};
 """
     
+    def _normalize_prop_type(self, prop_type: str) -> str:
+        """
+        Normalize prop type to valid TypeScript syntax
+        
+        Fixes common issues:
+        - 'function' -> '() => void'
+        - 'Function' -> '() => void'
+        - 'callback' -> '() => void'
+        """
+        prop_type_lower = prop_type.lower().strip()
+        
+        # Fix function types - 'function' is NOT valid TypeScript syntax
+        if prop_type_lower == 'function' or prop_type_lower == 'callback':
+            return "() => void"
+        elif 'function' in prop_type_lower and '=>' not in prop_type:
+            # If it says function but doesn't have arrow syntax, convert it
+            return "() => void"
+        
+        return prop_type
+    
+    def _get_default_value(self, prop_type: str) -> str:
+        """Get default value for a prop type"""
+        prop_type_lower = prop_type.lower()
+        if 'string' in prop_type_lower:
+            return "''"
+        elif 'number' in prop_type_lower or 'int' in prop_type_lower:
+            return "0"
+        elif 'boolean' in prop_type_lower or 'bool' in prop_type_lower:
+            return "false"
+        elif 'array' in prop_type_lower or '[]' in prop_type:
+            return "[]"
+        elif 'object' in prop_type_lower or 'dict' in prop_type_lower:
+            return "{}"
+        elif 'function' in prop_type_lower or 'callback' in prop_type_lower or '=>' in prop_type:
+            return "undefined"  # Functions default to undefined
+        elif 'function' in prop_type_lower or 'callback' in prop_type_lower or '=>' in prop_type:
+            return "undefined"  # Functions default to undefined
+        else:
+            return "undefined"
+    
+    def _fix_function_types_in_component(self, code: str, component_name: str) -> str:
+        """
+        Auto-fix invalid function type syntax in component code
+        
+        Fixes: 'function' -> '() => void' (function is NOT valid TypeScript syntax)
+        
+        Args:
+            code: Component code to fix
+            component_name: Name of the component
+            
+        Returns:
+            Fixed code with valid function types
+        """
+        # Pattern to match interface definitions
+        interface_pattern = rf'interface\s+{component_name}Props\s*\{{([^}}]+)\}}'
+        
+        def fix_function_types(match):
+            interface_body = match.group(1)
+            # Fix: prop?: function; -> prop?: () => void;
+            # Fix: prop?: Function; -> prop?: () => void;
+            fixed_body = re.sub(
+                r'(\w+\?)\s*:\s*(function|Function)(\s*;|\s*$)',
+                r'\1: () => void;',
+                interface_body,
+                flags=re.IGNORECASE
+            )
+            # Also fix without optional: prop: function; -> prop?: () => void;
+            fixed_body = re.sub(
+                r'(\w+)(\?)?\s*:\s*(function|Function)(\s*;|\s*$)',
+                r'\1?: () => void;',
+                fixed_body,
+                flags=re.IGNORECASE
+            )
+            return f"interface {component_name}Props {{{fixed_body}}}"
+        
+        code = re.sub(interface_pattern, fix_function_types, code, flags=re.DOTALL)
+        return code
+    
+    def _fix_required_props_in_component(self, code: str, component_name: str) -> str:
+        """
+        Auto-fix required props in component code to make them optional
+        
+        This prevents TS2739 errors: "Type '{}' is missing properties from type 'ComponentProps'"
+        
+        Args:
+            code: Component code to fix
+            component_name: Name of the component
+            
+        Returns:
+            Fixed code with all props made optional
+        """
+        
+        # Pattern to match interface definitions like: interface ComponentProps { prop: type; }
+        interface_pattern = rf'interface\s+{component_name}Props\s*\{{([^}}]+)\}}'
+        
+        def make_props_optional(match):
+            interface_body = match.group(1)
+            # Find all prop definitions (prop: type; or prop?: type;)
+            prop_pattern = r'(\s+)(\w+)(\??)\s*:\s*([^;]+);'
+            
+            def fix_prop(prop_match):
+                indent = prop_match.group(1)
+                prop_name = prop_match.group(2)
+                is_optional = prop_match.group(3)
+                prop_type = prop_match.group(4).strip()
+                
+                # If already optional, return as is
+                if is_optional:
+                    return f"{indent}{prop_name}?: {prop_type};"
+                # Make it optional
+                return f"{indent}{prop_name}?: {prop_type};"
+            
+            fixed_body = re.sub(prop_pattern, fix_prop, interface_body)
+            return f"interface {component_name}Props {{{fixed_body}}}"
+        
+        # Fix interface definition
+        code = re.sub(interface_pattern, make_props_optional, code, flags=re.DOTALL)
+        
+        # Fix function parameters to add default values
+        # Pattern: const Component: React.FC<Props> = (props) => {
+        # or: const Component: React.FC<Props> = ({ prop1, prop2 }) => {
+        func_pattern = rf'const\s+{component_name}\s*:\s*React\.FC<{component_name}Props>\s*=\s*\(([^)]+)\)\s*=>'
+        
+        def fix_function_params(match):
+            params = match.group(1).strip()
+            
+            # If already has destructuring with defaults, return as is
+            if '=' in params:
+                return match.group(0)
+            
+            # If it's just "props" or empty, we need to extract props from interface
+            if params == 'props' or params == '' or params == '{}':
+                # Try to extract prop names from interface
+                interface_match = re.search(interface_pattern, code, re.DOTALL)
+                if interface_match:
+                    interface_body = interface_match.group(1)
+                    prop_names = re.findall(r'(\w+)\??\s*:', interface_body)
+                    if prop_names:
+                        default_values = []
+                        for prop_name in prop_names:
+                            # Try to infer type from interface (simplified)
+                            prop_type_match = re.search(rf'{prop_name}\??\s*:\s*([^;]+)', interface_body)
+                            if prop_type_match:
+                                prop_type = prop_type_match.group(1).strip()
+                                default_val = self._get_default_value(prop_type)
+                                default_values.append(f"{prop_name} = {default_val}")
+                        
+                        if default_values:
+                            new_params = f"{{ {', '.join(default_values)} }}"
+                            return match.group(0).replace(params, new_params)
+            
+            # If it's destructuring without defaults: { prop1, prop2 }
+            elif params.startswith('{') and params.endswith('}'):
+                props_content = params[1:-1].strip()
+                if props_content and '=' not in props_content:
+                    prop_names = [p.strip() for p in props_content.split(',') if p.strip()]
+                    default_values = []
+                    for prop_name in prop_names:
+                        # Try to infer type from interface
+                        interface_match = re.search(interface_pattern, code, re.DOTALL)
+                        if interface_match:
+                            interface_body = interface_match.group(1)
+                            prop_type_match = re.search(rf'{prop_name}\??\s*:\s*([^;]+)', interface_body)
+                            if prop_type_match:
+                                prop_type = prop_type_match.group(1).strip()
+                                default_val = self._get_default_value(prop_type)
+                                default_values.append(f"{prop_name} = {default_val}")
+                    
+                    if default_values:
+                        new_params = f"{{ {', '.join(default_values)} }}"
+                        return match.group(0).replace(params, new_params)
+            
+            return match.group(0)
+        
+        code = re.sub(func_pattern, fix_function_params, code, flags=re.DOTALL)
+        
+        return code
+    
+    def _validate_and_fix_component_props(self, code: str, file_path: str) -> str:
+        """
+        Validate component code and auto-fix required props and function type issues
+        
+        Args:
+            code: Component code to validate
+            file_path: Path to the component file
+            
+        Returns:
+            Fixed code with all props made optional and valid function types
+        """
+        # Only process component files
+        if not file_path.endswith('.tsx') or '/components/' not in file_path:
+            return code
+        
+        # Extract component name from file path
+        component_name = os.path.basename(file_path).replace('.tsx', '')
+        
+        # Check if code has invalid function types (function or Function)
+        if re.search(r':\s*(function|Function)\s*;', code, re.IGNORECASE):
+            print(f"  ⚠️  Found invalid function type syntax in {component_name}")
+            print(f"  🔧 Auto-fixing function types...")
+            code = self._fix_function_types_in_component(code, component_name)
+            print(f"  ✅ Fixed function types in {component_name}")
+        
+        # Check if code has required props (interface without ?)
+        interface_pattern = rf'interface\s+{component_name}Props\s*\{{([^}}]+)\}}'
+        interface_match = re.search(interface_pattern, code, re.DOTALL)
+        
+        if interface_match:
+            interface_body = interface_match.group(1)
+            # Check if any props are required (no ? mark)
+            required_props = re.findall(r'(\w+)(?!\?)\s*:\s*[^;]+;', interface_body)
+            
+            if required_props:
+                print(f"  ⚠️  Found required props in {component_name}: {required_props}")
+                print(f"  🔧 Auto-fixing to make props optional...")
+                code = self._fix_required_props_in_component(code, component_name)
+                print(f"  ✅ Fixed required props in {component_name}")
+        
+        return code
+    
     def _generate_basic_component_template(self, component: ComponentSpec) -> str:
-        """Generate basic component template as fallback"""
+        """Generate basic component template as fallback with OPTIONAL props"""
+        # Validate component attributes with safe defaults
+        if not component:
+            component_name = "Component"
+            component_desc = "A React component"
+        else:
+            component_name = component.name or "Component"
+            component_desc = component.description or "A React component"
+        
         props_interface = ""
         props_param = ""
         
-        if component.props:
-            props_list = [f"  {key}: {value};" for key, value in component.props.items()]
+        has_props = bool(component and component.props)
+        
+        if component and component.props:
+            # CRITICAL: Make ALL props optional with ? mark
+            props_list = [f"  {key}?: {value};" for key, value in component.props.items()]
             props_interface = f"""
-interface {component.name}Props {{
+interface {component_name}Props {{
 {chr(10).join(props_list)}
 }}
 
 """
-            props_param = f"props: {component.name}Props"
+            # CRITICAL: Add default values for all props so component works without props
+            default_values = []
+            for key, value in component.props.items():
+                default_val = self._get_default_value(value)
+                default_values.append(f"{key} = {default_val}")
+            props_param = f"{{ {', '.join(default_values)} }}"
+        else:
+            props_param = "{}"
         
         return f"""import React from 'react';
 
-{props_interface}const {component.name}: React.FC{f'<{component.name}Props>' if component.props else ''} = ({props_param}) => {{
+{props_interface}const {component_name}: React.FC{f'<{component_name}Props>' if has_props else ''} = ({props_param}) => {{
   return (
-    <div className="{component.name.lower()}">
-      <h2>{component.name}</h2>
-      <p>{component.description}</p>
+    <div className="{(component_name or '').lower()}">
+      <h2>{component_name}</h2>
+      <p>{component_desc}</p>
     </div>
   );
 }};
 
-export default {component.name};
+export default {component_name};
 """
     
     def _generate_backend_files(self, backend_spec: BackendSpec) -> Dict[str, str]:
@@ -1095,9 +2032,16 @@ export default {component.name};
         files['server.js'] = self._generate_express_server(backend_spec)
         
         # Generate API route handlers
-        for endpoint in backend_spec.endpoints:
-            handler_name = endpoint.get('handler', 'defaultHandler')
-            files[f'api/{handler_name}.js'] = self._generate_api_handler(endpoint)
+        if backend_spec.endpoints:
+            for endpoint in backend_spec.endpoints:
+                if endpoint is None:
+                    continue
+                # Handle both dict and object endpoints
+                if isinstance(endpoint, dict):
+                    handler_name = endpoint.get('handler', 'defaultHandler')
+                else:
+                    handler_name = getattr(endpoint, 'handler', 'defaultHandler') or 'defaultHandler'
+                files[f'api/{handler_name}.js'] = self._generate_api_handler(endpoint)
         
         # Generate backend tests
         files['tests/backend.test.js'] = self._generate_backend_tests(backend_spec)
@@ -1115,12 +2059,24 @@ export default {component.name};
         """
         test_cases = []
         
+        if not backend_spec.endpoints:
+            return self._generate_backend_tests_empty()
+        
         for endpoint in backend_spec.endpoints:
-            method = endpoint['method'].upper()
-            path = endpoint['path']
-            handler_name = endpoint.get('handler', 'defaultHandler')
+            if endpoint is None:
+                continue
+            # Handle both dict and object endpoints
+            if isinstance(endpoint, dict):
+                method = endpoint.get('method', 'GET')
+                path = endpoint.get('path', '')
+                handler_name = endpoint.get('handler', 'defaultHandler')
+            else:
+                method = getattr(endpoint, 'method', 'GET') or 'GET'
+                path = getattr(endpoint, 'path', '') or ''
+                handler_name = getattr(endpoint, 'handler', 'defaultHandler') or 'defaultHandler'
             
-            if method == 'POST':
+            method_upper = (method or 'GET').upper()
+            if method_upper == 'POST':
                 test_cases.append(f"""
   test('{method} {path} - success', async () => {{
     const response = await request(app)
@@ -1142,7 +2098,7 @@ export default {component.name};
     expect(response.body.success).toBe(false);
   }});""")
             
-            elif method == 'GET':
+            elif method_upper == 'GET':
                 if 'search' in path.lower():
                     test_cases.append(f"""
   test('{method} {path} - with query', async () => {{
@@ -1204,6 +2160,22 @@ describe('Backend API Endpoints', () => {{
 }});
 """
     
+    def _generate_npmrc(self) -> str:
+        """
+        Generate .npmrc file for consistent dependency resolution
+        
+        This ensures proper dependency resolution and prevents module not found errors
+        like 'ajv/dist/compile/codegen' by ensuring compatible versions are installed.
+        """
+        return """# npm configuration for consistent dependency resolution
+# Use legacy peer deps to handle TypeScript 4.9.5 with react-scripts 5.0.1
+legacy-peer-deps=true
+# Ensure proper dependency resolution
+prefer-offline=false
+# Use npm registry
+registry=https://registry.npmjs.org/
+"""
+    
     def _generate_env_example(self) -> str:
         """Generate .env.example file for backend configuration"""
         return """# Backend Configuration
@@ -1234,10 +2206,22 @@ PORT=3001
         route_imports = []
         route_usage = []
         
-        for endpoint in backend_spec.endpoints:
-            handler_name = endpoint.get('handler', 'defaultHandler')
-            route_imports.append(f"const {handler_name} = require('./api/{handler_name}');")
-            route_usage.append(f"app.{endpoint['method'].lower()}('{endpoint['path']}', {handler_name});")
+        if backend_spec.endpoints:
+            for endpoint in backend_spec.endpoints:
+                if endpoint is None:
+                    continue
+                # Handle both dict and object endpoints
+                if isinstance(endpoint, dict):
+                    handler_name = endpoint.get('handler', 'defaultHandler')
+                    method = endpoint.get('method', 'GET')
+                    path = endpoint.get('path', '')
+                else:
+                    handler_name = getattr(endpoint, 'handler', 'defaultHandler') or 'defaultHandler'
+                    method = getattr(endpoint, 'method', 'GET') or 'GET'
+                    path = getattr(endpoint, 'path', '') or ''
+                
+                route_imports.append(f"const {handler_name} = require('./api/{handler_name}');")
+                route_usage.append(f"app.{method.lower()}('{path}', {handler_name});")
         
         return f"""const express = require('express');
 {chr(10).join(middleware_imports)}
@@ -1292,16 +2276,28 @@ module.exports = app;
         
         Validates: Requirements 13.2, 13.4
         """
-        method = endpoint['method'].upper()
-        path = endpoint['path']
-        handler_name = endpoint.get('handler', 'defaultHandler')
-        description = endpoint.get('description', f'{handler_name} handler')
+        # Handle both dict and object endpoints
+        if endpoint is None:
+            raise ValueError("Endpoint cannot be None")
+        
+        if isinstance(endpoint, dict):
+            method = endpoint.get('method', 'GET')
+            path = endpoint.get('path', '')
+            handler_name = endpoint.get('handler', 'defaultHandler')
+            description = endpoint.get('description', f'{handler_name} handler')
+        else:
+            method = getattr(endpoint, 'method', 'GET') or 'GET'
+            path = getattr(endpoint, 'path', '') or ''
+            handler_name = getattr(endpoint, 'handler', 'defaultHandler') or 'defaultHandler'
+            description = getattr(endpoint, 'description', f'{handler_name} handler') or f'{handler_name} handler'
+        
+        method_upper = (method or 'GET').upper()
         
         # Generate validation logic based on endpoint type
         validation_logic = ""
         response_logic = ""
         
-        if method == 'POST':
+        if method_upper == 'POST':
             if 'contact' in path.lower():
                 validation_logic = """
     // Validate contact form data
@@ -1376,7 +2372,7 @@ module.exports = app;
         data: req.body
       });"""
         
-        elif method == 'GET':
+        elif method_upper == 'GET':
             if 'search' in path.lower():
                 validation_logic = """
     // Get search query from query parameters
@@ -1437,16 +2433,38 @@ module.exports = {handler_name};
 """
     
     def _generate_app_test(self) -> str:
-        """Generate basic App test file"""
-        return """import React from 'react';
+        """
+        Generate basic App test file
+        
+        CRITICAL: Must import @testing-library/jest-dom to get TypeScript types
+        for matchers like toBeInTheDocument(). Also setupTests.ts will be loaded automatically.
+        """
+        return """import '@testing-library/jest-dom';
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
 test('renders app without crashing', () => {
   render(<App />);
   // Basic test to ensure app renders
-  expect(document.querySelector('.App')).toBeInTheDocument();
+  const appElement = document.querySelector('.App');
+  expect(appElement).toBeInTheDocument();
 });
+"""
+    
+    def _generate_setup_tests(self) -> str:
+        """
+        Generate setupTests.ts file for jest-dom configuration
+        
+        CRITICAL: This file is automatically loaded by react-scripts before tests run.
+        It sets up jest-dom matchers globally so toBeInTheDocument() works in all tests.
+        This file MUST exist for TypeScript to recognize jest-dom matchers.
+        """
+        return """// jest-dom adds custom jest matchers for asserting on DOM nodes.
+// allows you to do things like:
+// expect(element).toHaveTextContent(/react/i)
+// learn more: https://github.com/testing-library/jest-dom
+import '@testing-library/jest-dom';
 """
     
     def _generate_index_html(self, plan: Plan) -> str:
@@ -1506,28 +2524,32 @@ test('renders app without crashing', () => {
     def _generate_tsconfig(self) -> str:
         """Generate tsconfig.json with proper module resolution for React"""
         import json
+        # TypeScript 4.9.5 compatible configuration for react-scripts 5.0.1
         tsconfig = {
             "compilerOptions": {
-                "target": "ES2020",
-                "lib": ["ES2020", "DOM", "DOM.Iterable"],
-                "jsx": "react-jsx",
-                "module": "ESNext",
-                "moduleResolution": "bundler",
-                "resolveJsonModule": True,
-                "allowImportingTsExtensions": True,
-                "allowSyntheticDefaultImports": True,
-                "esModuleInterop": True,
-                "forceConsistentCasingInFileNames": True,
-                "strict": True,
+                "target": "es5",
+                "lib": [
+                    "dom",
+                    "dom.iterable",
+                    "es6"
+                ],
+                "allowJs": True,
                 "skipLibCheck": True,
-                "noEmit": True,
+                "esModuleInterop": True,
+                "allowSyntheticDefaultImports": True,
+                "strict": True,
+                "forceConsistentCasingInFileNames": True,
+                "noFallthroughCasesInSwitch": True,
+                "module": "esnext",
+                "moduleResolution": "node",
+                "resolveJsonModule": True,
                 "isolatedModules": True,
-                "noUnusedLocals": True,
-                "noUnusedParameters": True,
-                "noFallthroughCasesInSwitch": True
+                "noEmit": True,
+                "jsx": "react-jsx"
             },
-            "include": ["src"],
-            "references": [{"path": "./tsconfig.node.json"}]
+            "include": [
+                "src"
+            ]
         }
         return json.dumps(tsconfig, indent=2)
     
@@ -1627,11 +2649,21 @@ yarn-error.log*
         backend_section = ""
         backend_scripts = ""
         
-        if plan.backend_logic:
-            endpoints_list = '\n'.join([
-                f"- **{ep['method']} {ep['path']}**: {ep.get('description', 'API endpoint')}" 
-                for ep in plan.backend_logic.endpoints
-            ])
+        if plan.backend_logic and plan.backend_logic.endpoints:
+            endpoints_list_items = []
+            for ep in plan.backend_logic.endpoints:
+                if ep is None:
+                    continue
+                if isinstance(ep, dict):
+                    method = ep.get('method', 'GET')
+                    path = ep.get('path', '')
+                    desc = ep.get('description', 'API endpoint')
+                else:
+                    method = getattr(ep, 'method', 'GET') or 'GET'
+                    path = getattr(ep, 'path', '') or ''
+                    desc = getattr(ep, 'description', 'API endpoint') or 'API endpoint'
+                endpoints_list_items.append(f"- **{method} {path}**: {desc}")
+            endpoints_list = '\n'.join(endpoints_list_items)
             
             backend_section = f"""
 ## Backend API
@@ -1834,7 +2866,7 @@ This application was generated automatically based on the following plan:
             # Write file content
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-        
+            
         print(f"📁 Files saved to: {base_path}")
         print(f"   You can find your generated project at this location!")
         
@@ -1870,6 +2902,11 @@ This application was generated automatically based on the following plan:
             full_path = os.path.join(project_dir, file_path)
             
             try:
+                # CRITICAL: Validate and fix component props before writing
+                # This prevents TS2739 errors during deployment
+                if file_path.endswith('.tsx') and '/components/' in file_path:
+                    content = self._validate_and_fix_component_props(content, file_path)
+                
                 # Create directory structure if needed
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 
@@ -2005,16 +3042,28 @@ This application was generated automatically based on the following plan:
             try:
                 # Install dependencies first (if package.json exists)
                 if os.path.exists('package.json'):
-                    # Run npm install
+                    print("🔍 BUILDER: Installing dependencies...")
+                    # Clean install to avoid dependency conflicts
+                    if os.path.exists('node_modules'):
+                        print("🔍 BUILDER: Cleaning existing node_modules...")
+                        subprocess.run(['rm', '-rf', 'node_modules'], capture_output=True, timeout=60)
+                    if os.path.exists('package-lock.json'):
+                        subprocess.run(['rm', '-f', 'package-lock.json'], capture_output=True, timeout=60)
+                    
+                    # Use --legacy-peer-deps to handle TypeScript version compatibility
+                    # .npmrc file should already have legacy-peer-deps=true, but we keep it here for safety
                     npm_result = subprocess.run(
-                        ['npm', 'install'],
+                        ['npm', 'install', '--legacy-peer-deps'],
                         capture_output=True,
                         text=True,
                         timeout=300  # 5 minute timeout
                     )
                     
                     if npm_result.returncode != 0:
-                        raise RuntimeError(f"npm install failed: {npm_result.stderr}")
+                        error_msg = f"npm install failed: {npm_result.stderr}"
+                        print(f"❌ BUILDER: {error_msg}")
+                        raise RuntimeError(error_msg)
+                    print("✓ BUILDER: Dependencies installed successfully")
                 
                 # Run tests using npm test (which runs react-scripts test)
                 test_result = subprocess.run(
@@ -2384,16 +3433,21 @@ ERROR CONTEXT:
 TEST FAILURES:
 {chr(10).join(test_failures) if test_failures else 'No specific test failures provided'}
 
-Please regenerate the component addressing these issues:
+Please regenerate the PAGE addressing these issues:
 - Fix any syntax errors or type errors
-- Ensure all imports are correct
+- CRITICAL: Fix TypeScript prop mismatches - only pass props that exist in component interfaces
+- If you see "Property 'X' does not exist on type 'ComponentProps'", remove that prop or use correct component
+- Use correct component for correct purpose (MenuItem for items, MenuSection for sections, MenuCategory for categories)
+- If unsure about component props, use components WITHOUT props: <ComponentName />
+- Components work standalone with default values
+- Ensure all imports are correct (NO .tsx extensions)
 - Ensure proper TypeScript typing
-- Make sure the component exports correctly
+- Make sure the page exports correctly
 - Address the specific test failures mentioned above
 - Use semantic HTML and proper CSS classes
-- Ensure the component is accessible
+- Ensure the page is accessible
 
-Return ONLY the corrected TypeScript React component code, no explanations or markdown formatting.
+Return ONLY the corrected TypeScript React PAGE code, no explanations or markdown formatting.
 """
         
         try:
@@ -2421,7 +3475,7 @@ Return ONLY the corrected TypeScript React component code, no explanations or ma
         props_info = ""
         if component.props:
             props_list = [f"{key}: {value}" for key, value in component.props.items()]
-            props_info = f"Props: {', '.join(props_list)}"
+            props_info = f"Props (ALL MUST BE OPTIONAL): {', '.join(props_list)} - Make all props optional with default values so component works as <{component.name} />"
         
         prompt = f"""
 The following React TypeScript component failed tests. Please regenerate it with fixes.

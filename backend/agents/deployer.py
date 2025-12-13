@@ -434,8 +434,18 @@ class DeployerAgent:
             try:
                 # Ensure dependencies are installed before deployment
                 self.logger.info("Installing npm dependencies before deployment...")
+                # Clean install to avoid dependency conflicts
+                # Remove node_modules and package-lock.json if they exist
+                if os.path.exists('node_modules'):
+                    self.logger.info("Cleaning existing node_modules...")
+                    subprocess.run(['rm', '-rf', 'node_modules'], capture_output=True, timeout=60)
+                if os.path.exists('package-lock.json'):
+                    subprocess.run(['rm', '-f', 'package-lock.json'], capture_output=True, timeout=60)
+                
+                # Use --legacy-peer-deps to handle TypeScript version compatibility
+                # .npmrc file should already have legacy-peer-deps=true, but we keep it here for safety
                 install_result = subprocess.run(
-                    ['npm', 'install'],
+                    ['npm', 'install', '--legacy-peer-deps'],
                     capture_output=True,
                     text=True,
                     timeout=300  # 5 minute timeout
@@ -544,8 +554,17 @@ class DeployerAgent:
             try:
                 # Ensure dependencies are installed before building
                 self.logger.info("Installing npm dependencies before build...")
+                # Clean install to avoid dependency conflicts
+                if os.path.exists('node_modules'):
+                    self.logger.info("Cleaning existing node_modules...")
+                    subprocess.run(['rm', '-rf', 'node_modules'], capture_output=True, timeout=60)
+                if os.path.exists('package-lock.json'):
+                    subprocess.run(['rm', '-f', 'package-lock.json'], capture_output=True, timeout=60)
+                
+                # Use --legacy-peer-deps to handle TypeScript version compatibility
+                # .npmrc file should already have legacy-peer-deps=true, but we keep it here for safety
                 install_result = subprocess.run(
-                    ['npm', 'install'],
+                    ['npm', 'install', '--legacy-peer-deps'],
                     capture_output=True,
                     text=True,
                     timeout=300  # 5 minute timeout

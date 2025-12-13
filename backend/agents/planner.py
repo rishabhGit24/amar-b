@@ -64,8 +64,8 @@ class PlannerAgent:
                         recoverable=False
                     )
                 
-                # Use configured model or fallback to gemini-2.5-flash-lite
-                model_name = self.settings.gemini_model or "gemini-2.5-flash-lite"
+                # Use configured model or fallback to gemini-2.5-flash
+                model_name = self.settings.gemini_model or "gemini-2.5-flash"
                 # Use LangChain's default retry mechanism
                 self.llm = ChatGoogleGenerativeAI(
                     model=model_name,

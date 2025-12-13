@@ -18,6 +18,8 @@ export interface ProgressUpdate {
   message: string;
   details?: string;
   session_id?: string;
+  deployment_url?: string;
+  execution_time_ms?: number;
 }
 
 export interface DeploymentResult {

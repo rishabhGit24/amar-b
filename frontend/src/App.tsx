@@ -82,6 +82,33 @@ function App() {
 
       // Check if workflow is complete
       if (update.type === "complete") {
+        // If deployment URL is in the message, create result immediately
+        if (update.deployment_url) {
+          setResult({
+            success: true,
+            url: update.deployment_url,
+            execution_time: update.execution_time_ms || 0,
+            project_summary: {
+              page_count: 0,
+              component_count: 0,
+              file_count: 0,
+            },
+          });
+          setIsGenerating(false);
+        } else {
+          // Deployment completed but no URL - show status
+          setResult({
+            success: true,
+            execution_time: update.execution_time_ms || 0,
+            project_summary: {
+              page_count: 0,
+              component_count: 0,
+              file_count: 0,
+            },
+          });
+          setIsGenerating(false);
+        }
+        // Always fetch full result to get project summary
         fetchResult(sessionId);
       } else if (
         update.type === "error" &&
@@ -89,6 +116,33 @@ function App() {
       ) {
         setError(update.message);
         setIsGenerating(false);
+      }
+      
+      // Also check for deployment completion in progress updates
+      if (
+        update.type === "progress" &&
+        update.agent === "deployer" &&
+        update.status === "completed" &&
+        update.details &&
+        update.details.includes("Deployment URL:")
+      ) {
+        // Extract URL from details if present
+        const urlMatch = update.details.match(/Deployment URL:\s*(https?:\/\/[^\s]+)/);
+        if (urlMatch && urlMatch[1]) {
+          setResult({
+            success: true,
+            url: urlMatch[1],
+            execution_time: 0,
+            project_summary: {
+              page_count: 0,
+              component_count: 0,
+              file_count: 0,
+            },
+          });
+          setIsGenerating(false);
+          // Still fetch full result
+          fetchResult(sessionId);
+        }
       }
     };
 
@@ -111,15 +165,26 @@ function App() {
       }
 
       const data: DeploymentResult = await response.json();
-      setResult(data);
+      // Update result (merge with existing if URL was already set from WebSocket)
+      setResult((prev) => ({
+        ...data,
+        // Preserve URL from WebSocket if it was already set
+        url: prev?.url || data.url,
+      }));
       setIsGenerating(false);
 
       if (!data.success && data.error) {
         setError(data.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch result");
-      setIsGenerating(false);
+      // If we already have a result with URL, don't show error
+      if (!result?.url) {
+        setError(err instanceof Error ? err.message : "Failed to fetch result");
+        setIsGenerating(false);
+      } else {
+        // We have a URL, just mark as generating false
+        setIsGenerating(false);
+      }
     }
   };
 
@@ -307,41 +372,52 @@ function App() {
                   : "❌ Deployment Failed"}
               </h2>
 
-              {result.success && result.url && (
+              {result.success && (
                 <div className="mb-6">
-                  <p className="text-gray-600 mb-3">
-                    Your application has been successfully deployed and is now
-                    live!
-                  </p>
-                  <a
-                    href={result.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    <span>View Your Application</span>
-                    <svg
-                      className="ml-2 w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                      />
-                    </svg>
-                  </a>
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-500">Deployment URL:</p>
-                    <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
-                      {result.url}
-                    </code>
-                  </div>
+                  {result.url ? (
+                    <>
+                      <p className="text-gray-600 mb-3">
+                        Your application has been successfully deployed and is now
+                        live!
+                      </p>
+                      <a
+                        href={result.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        <span>View Your Application</span>
+                        <svg
+                          className="ml-2 w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                          />
+                        </svg>
+                      </a>
+                      <div className="mt-2">
+                        <p className="text-sm text-gray-500">Deployment URL:</p>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
+                          {result.url}
+                        </code>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Deployment Status:</strong> Application has been generated and tested successfully, but deployment URL is not available. You can download the project files below to deploy manually.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
+
 
               {result.project_summary && (
                 <div className="mb-6 p-4 bg-gray-50 rounded-md">
