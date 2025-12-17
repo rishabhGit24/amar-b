@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
+import ParticleBackground from "./components/ParticleBackground";
 import { getApiEndpoint, getWebSocketUrl } from "./config";
 import {
   DeploymentResult,
@@ -7,7 +8,6 @@ import {
   ProgressUpdate,
   UserRequest,
 } from "./types";
-import ParticleBackground from "./components/ParticleBackground";
 
 function App() {
   const [description, setDescription] = useState("");
@@ -118,7 +118,7 @@ function App() {
         setError(update.message);
         setIsGenerating(false);
       }
-      
+
       // Also check for deployment completion in progress updates
       if (
         update.type === "progress" &&
@@ -128,7 +128,9 @@ function App() {
         update.details.includes("Deployment URL:")
       ) {
         // Extract URL from details if present
-        const urlMatch = update.details.match(/Deployment URL:\s*(https?:\/\/[^\s]+)/);
+        const urlMatch = update.details.match(
+          /Deployment URL:\s*(https?:\/\/[^\s]+)/
+        );
         if (urlMatch && urlMatch[1]) {
           setResult({
             success: true,
@@ -199,20 +201,45 @@ function App() {
     setValidationError(null);
   };
 
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
   return (
     <div className="app-container">
       <ParticleBackground />
-      
+
+      {/* Animated cursor glow */}
+      <div
+        className="cursor-glow"
+        style={{
+          left: mousePosition.x,
+          top: mousePosition.y,
+        }}
+      />
+
       <div className="main-content">
         <header className="header">
-          <h1>AMAR MVP</h1>
-          <p className="subtitle">Autonomous Memory Agentic Realms</p>
+          <h1 className="glitch-text" data-text="AMAR">
+            AMAR
+          </h1>
+          <div className="subtitle-container">
+            <span className="subtitle-line"></span>
+            <p className="subtitle">Autonomous Multi-Agent React</p>
+            <span className="subtitle-line"></span>
+          </div>
           <p className="description">
-            Generate React applications from natural language descriptions
+            Transform ideas into deployed applications with AI-powered agents
           </p>
         </header>
 
-        <main style={{ width: '100%', maxWidth: '800px' }}>
+        <main style={{ width: "100%", maxWidth: "800px" }}>
           {/* User Input Form */}
           {!isGenerating && !result && (
             <div className="card fade-in">
@@ -228,7 +255,7 @@ function App() {
               <form onSubmit={handleSubmit} className="form-container">
                 <div className="textarea-wrapper">
                   <textarea
-                    className={`textarea ${validationError ? 'error' : ''}`}
+                    className={`textarea ${validationError ? "error" : ""}`}
                     placeholder="Example: Build a landing page for a coffee shop with a menu, about section, and contact form..."
                     value={description}
                     onChange={(e) => {
@@ -241,8 +268,16 @@ function App() {
                   />
                   {validationError && (
                     <div className="error-message">
-                      <svg className="icon" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      <svg
+                        className="icon"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                       {validationError}
                     </div>
@@ -292,36 +327,55 @@ function App() {
                 {progressUpdates.map((update, index) => (
                   <div
                     key={index}
-                    className={`progress-item ${update.status || 'running'}`}
+                    className={`progress-item ${update.status || "running"}`}
                   >
                     <div className="progress-icon">
                       {update.status === "running" && (
                         <div className="spinner"></div>
                       )}
                       {update.status === "completed" && (
-                        <svg className="icon" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        <svg
+                          className="icon"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                            clipRule="evenodd"
+                          />
                         </svg>
                       )}
                       {update.status === "failed" && (
-                        <svg className="icon" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        <svg
+                          className="icon"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                            clipRule="evenodd"
+                          />
                         </svg>
                       )}
                     </div>
                     <div className="progress-content">
                       <p className="progress-message">
                         {update.agent && (
-                          <span style={{ textTransform: 'capitalize', fontWeight: 600 }}>
+                          <span
+                            style={{
+                              textTransform: "capitalize",
+                              fontWeight: 600,
+                            }}
+                          >
                             {update.agent} Agent:{" "}
                           </span>
                         )}
                         {update.message}
                       </p>
                       {update.details && (
-                        <p className="progress-details">
-                          {update.details}
-                        </p>
+                        <p className="progress-details">{update.details}</p>
                       )}
                     </div>
                   </div>
@@ -336,7 +390,7 @@ function App() {
                   <button
                     onClick={handleReset}
                     className="btn btn-secondary"
-                    style={{ marginTop: '1rem' }}
+                    style={{ marginTop: "1rem" }}
                   >
                     Try Again
                   </button>
@@ -350,30 +404,38 @@ function App() {
             <div className="card result-container">
               <h2 className="result-title">
                 <span>{result.success ? "🎉" : "❌"}</span>
-                {result.success
-                  ? "Application Deployed!"
-                  : "Deployment Failed"}
+                {result.success ? "Application Deployed!" : "Deployment Failed"}
               </h2>
 
               {result.success && (
-                <div style={{ marginBottom: '2rem' }}>
+                <div style={{ marginBottom: "2rem" }}>
                   {result.url ? (
                     <>
                       <p className="card-description">
-                        Your application has been successfully deployed and is now
-                        live!
+                        Your application has been successfully deployed and is
+                        now live!
                       </p>
                       <a
                         href={result.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn btn-primary btn-full"
-                        style={{ marginTop: '1.5rem' }}
+                        style={{ marginTop: "1.5rem" }}
                       >
                         <span>🌐</span>
                         <span>View Your Application</span>
-                        <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        <svg
+                          className="icon"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                          />
                         </svg>
                       </a>
                       <div className="result-url">
@@ -384,7 +446,10 @@ function App() {
                   ) : (
                     <div className="info-box warning">
                       <p>
-                        <strong>⚠️ Deployment Status:</strong> Application has been generated and tested successfully, but deployment URL is not available. You can download the project files below to deploy manually.
+                        <strong>⚠️ Deployment Status:</strong> Application has
+                        been generated and tested successfully, but deployment
+                        URL is not available. You can download the project files
+                        below to deploy manually.
                       </p>
                     </div>
                   )}
@@ -395,15 +460,21 @@ function App() {
                 <div className="project-summary">
                   <div className="summary-item">
                     <div className="summary-label">Pages</div>
-                    <div className="summary-value">{result.project_summary.page_count}</div>
+                    <div className="summary-value">
+                      {result.project_summary.page_count}
+                    </div>
                   </div>
                   <div className="summary-item">
                     <div className="summary-label">Components</div>
-                    <div className="summary-value">{result.project_summary.component_count}</div>
+                    <div className="summary-value">
+                      {result.project_summary.component_count}
+                    </div>
                   </div>
                   <div className="summary-item">
                     <div className="summary-label">Files</div>
-                    <div className="summary-value">{result.project_summary.file_count}</div>
+                    <div className="summary-value">
+                      {result.project_summary.file_count}
+                    </div>
                   </div>
                   <div className="summary-item">
                     <div className="summary-label">Time</div>
@@ -418,7 +489,7 @@ function App() {
 
               {/* Download Project Button */}
               {sessionId && (
-                <div style={{ marginBottom: '2rem' }}>
+                <div style={{ marginBottom: "2rem" }}>
                   <button
                     onClick={() => {
                       const downloadUrl = getApiEndpoint(
@@ -428,12 +499,29 @@ function App() {
                     }}
                     className="btn btn-success btn-full"
                   >
-                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    <svg
+                      className="icon"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                      />
                     </svg>
                     <span>Download Project Files</span>
                   </button>
-                  <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                  <p
+                    style={{
+                      marginTop: "0.5rem",
+                      fontSize: "0.875rem",
+                      color: "var(--text-muted)",
+                      textAlign: "center",
+                    }}
+                  >
                     Download the complete project as a ZIP file to customize or
                     deploy manually
                   </p>

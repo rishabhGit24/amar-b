@@ -1,0 +1,107 @@
+.animated-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 2rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+.logo-ring-outer {
+  animation: rotate-clockwise 20s linear infinite;
+  transform-origin: center;
+}
+
+.logo-ring-middle {
+  animation: rotate-counter-clockwise 15s linear infinite;
+  transform-origin: center;
+}
+
+.logo-core {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.logo-letter {
+  animation: letter-glow 2s ease-in-out infinite;
+}
+
+.logo-particle {
+  animation: orbit 8s linear infinite;
+  transform-origin: 60px 60px;
+}
+
+.logo-particle-1 {
+  animation-delay: 0s;
+}
+
+.logo-particle-2 {
+  animation-delay: 2s;
+}
+
+.logo-particle-3 {
+  animation-delay: 4s;
+}
+
+.logo-particle-4 {
+  animation-delay: 6s;
+}
+
+@keyframes rotate-clockwise {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rotate-counter-clockwise {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 10px rgba(102, 126, 234, 0.8));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 20px rgba(102, 126, 234, 1));
+  }
+}
+
+@keyframes letter-glow {
+  0%,
+  100% {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.8));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 1));
+  }
+}
+
+@keyframes orbit {
+  from {
+    transform: rotate(0deg) translateX(50px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(50px) rotate(-360deg);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
