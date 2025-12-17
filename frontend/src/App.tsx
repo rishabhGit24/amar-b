@@ -7,6 +7,7 @@ import {
   ProgressUpdate,
   UserRequest,
 } from "./types";
+import ParticleBackground from "./components/ParticleBackground";
 
 function App() {
   const [description, setDescription] = useState("");
@@ -199,36 +200,35 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">AMAR MVP</h1>
-          <p className="text-lg text-gray-600">
-            Autonomous Memory Agentic Realms
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
+    <div className="app-container">
+      <ParticleBackground />
+      
+      <div className="main-content">
+        <header className="header">
+          <h1>AMAR MVP</h1>
+          <p className="subtitle">Autonomous Memory Agentic Realms</p>
+          <p className="description">
             Generate React applications from natural language descriptions
           </p>
         </header>
 
-        <main className="max-w-2xl mx-auto">
-          {/* User Input Form - Subtask 13.1 */}
+        <main style={{ width: '100%', maxWidth: '800px' }}>
+          {/* User Input Form */}
           {!isGenerating && !result && (
-            <div className="bg-white rounded-lg shadow-md p-6 fade-in">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            <div className="card fade-in">
+              <h2 className="card-title">
+                <span>✨</span>
                 Describe Your Application
               </h2>
-              <p className="text-gray-600 mb-4">
+              <p className="card-description">
                 Tell us what kind of web application you'd like to build. We'll
                 plan, code, test, and deploy it for you automatically.
               </p>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
+              <form onSubmit={handleSubmit} className="form-container">
+                <div className="textarea-wrapper">
                   <textarea
-                    className={`w-full h-32 p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
-                      validationError ? "border-red-500" : "border-gray-300"
-                    }`}
+                    className={`textarea ${validationError ? 'error' : ''}`}
                     placeholder="Example: Build a landing page for a coffee shop with a menu, about section, and contact form..."
                     value={description}
                     onChange={(e) => {
@@ -240,121 +240,103 @@ function App() {
                     onBlur={() => validateInput(description)}
                   />
                   {validationError && (
-                    <p className="mt-1 text-sm text-red-600">
+                    <div className="error-message">
+                      <svg className="icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
                       {validationError}
-                    </p>
+                    </div>
                   )}
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full bg-blue-600 text-white py-3 px-6 rounded-md font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn btn-primary btn-full"
                   disabled={isGenerating || !description.trim()}
                 >
-                  Generate Application
+                  <span>🚀</span>
+                  <span>Generate Application</span>
                 </button>
               </form>
 
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Maximum 5 pages per application.
+              <div className="info-box info">
+                <p>
+                  <strong>💡 Note:</strong> Maximum 5 pages per application.
                   Generation typically takes 3-5 minutes.
                 </p>
               </div>
 
               {error && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-800">
-                    <strong>Error:</strong> {error}
+                <div className="info-box error">
+                  <p>
+                    <strong>⚠️ Error:</strong> {error}
                   </p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Real-time Progress Display - Subtask 13.2 */}
+          {/* Real-time Progress Display */}
           {isGenerating && (
-            <div className="bg-white rounded-lg shadow-md p-6 fade-in">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            <div className="card fade-in">
+              <h2 className="card-title">
+                <span>⚡</span>
                 Generating Your Application
               </h2>
-              <p className="text-gray-600 mb-6">
+              <p className="card-description">
                 Please wait while our agents plan, build, test, and deploy your
                 application...
               </p>
 
-              <div className="space-y-3">
+              <div className="progress-container">
                 {progressUpdates.map((update, index) => (
                   <div
                     key={index}
-                    className={`p-3 rounded-md border ${
-                      update.status === "completed"
-                        ? "bg-green-50 border-green-200"
-                        : update.status === "failed"
-                        ? "bg-red-50 border-red-200"
-                        : "bg-blue-50 border-blue-200"
-                    }`}
+                    className={`progress-item ${update.status || 'running'}`}
                   >
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        {update.status === "running" && (
-                          <div className="spinner"></div>
+                    <div className="progress-icon">
+                      {update.status === "running" && (
+                        <div className="spinner"></div>
+                      )}
+                      {update.status === "completed" && (
+                        <svg className="icon" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {update.status === "failed" && (
+                        <svg className="icon" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="progress-content">
+                      <p className="progress-message">
+                        {update.agent && (
+                          <span style={{ textTransform: 'capitalize', fontWeight: 600 }}>
+                            {update.agent} Agent:{" "}
+                          </span>
                         )}
-                        {update.status === "completed" && (
-                          <svg
-                            className="w-5 h-5 text-green-600"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        )}
-                        {update.status === "failed" && (
-                          <svg
-                            className="w-5 h-5 text-red-600"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="ml-3 flex-1">
-                        <p className="text-sm font-medium text-gray-900">
-                          {update.agent && (
-                            <span className="capitalize">
-                              {update.agent} Agent:{" "}
-                            </span>
-                          )}
-                          {update.message}
+                        {update.message}
+                      </p>
+                      {update.details && (
+                        <p className="progress-details">
+                          {update.details}
                         </p>
-                        {update.details && (
-                          <p className="mt-1 text-xs text-gray-600">
-                            {update.details}
-                          </p>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
 
               {error && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-800">
-                    <strong>Error:</strong> {error}
+                <div className="info-box error">
+                  <p>
+                    <strong>⚠️ Error:</strong> {error}
                   </p>
                   <button
                     onClick={handleReset}
-                    className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+                    className="btn btn-secondary"
+                    style={{ marginTop: '1rem' }}
                   >
                     Try Again
                   </button>
@@ -363,20 +345,21 @@ function App() {
             </div>
           )}
 
-          {/* Deployment Result Display - Subtask 13.3 */}
+          {/* Deployment Result Display */}
           {result && !isGenerating && (
-            <div className="bg-white rounded-lg shadow-md p-6 fade-in">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            <div className="card result-container">
+              <h2 className="result-title">
+                <span>{result.success ? "🎉" : "❌"}</span>
                 {result.success
-                  ? "🎉 Application Deployed!"
-                  : "❌ Deployment Failed"}
+                  ? "Application Deployed!"
+                  : "Deployment Failed"}
               </h2>
 
               {result.success && (
-                <div className="mb-6">
+                <div style={{ marginBottom: '2rem' }}>
                   {result.url ? (
                     <>
-                      <p className="text-gray-600 mb-3">
+                      <p className="card-description">
                         Your application has been successfully deployed and is now
                         live!
                       </p>
@@ -384,72 +367,50 @@ function App() {
                         href={result.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        className="btn btn-primary btn-full"
+                        style={{ marginTop: '1.5rem' }}
                       >
+                        <span>🌐</span>
                         <span>View Your Application</span>
-                        <svg
-                          className="ml-2 w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                          />
+                        <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                         </svg>
                       </a>
-                      <div className="mt-2">
-                        <p className="text-sm text-gray-500">Deployment URL:</p>
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded break-all">
-                          {result.url}
-                        </code>
+                      <div className="result-url">
+                        <span>🔗</span>
+                        <span>{result.url}</span>
                       </div>
                     </>
                   ) : (
-                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                      <p className="text-sm text-yellow-800">
-                        <strong>Deployment Status:</strong> Application has been generated and tested successfully, but deployment URL is not available. You can download the project files below to deploy manually.
+                    <div className="info-box warning">
+                      <p>
+                        <strong>⚠️ Deployment Status:</strong> Application has been generated and tested successfully, but deployment URL is not available. You can download the project files below to deploy manually.
                       </p>
                     </div>
                   )}
                 </div>
               )}
 
-
               {result.project_summary && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-md">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                    Project Summary
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-500">Pages</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {result.project_summary.page_count}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Components</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {result.project_summary.component_count}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Files Generated</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {result.project_summary.file_count}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Execution Time</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {result.execution_time
-                          ? `${(result.execution_time / 1000).toFixed(1)}s`
-                          : "N/A"}
-                      </p>
+                <div className="project-summary">
+                  <div className="summary-item">
+                    <div className="summary-label">Pages</div>
+                    <div className="summary-value">{result.project_summary.page_count}</div>
+                  </div>
+                  <div className="summary-item">
+                    <div className="summary-label">Components</div>
+                    <div className="summary-value">{result.project_summary.component_count}</div>
+                  </div>
+                  <div className="summary-item">
+                    <div className="summary-label">Files</div>
+                    <div className="summary-value">{result.project_summary.file_count}</div>
+                  </div>
+                  <div className="summary-item">
+                    <div className="summary-label">Time</div>
+                    <div className="summary-value">
+                      {result.execution_time
+                        ? `${(result.execution_time / 1000).toFixed(1)}s`
+                        : "N/A"}
                     </div>
                   </div>
                 </div>
@@ -457,7 +418,7 @@ function App() {
 
               {/* Download Project Button */}
               {sessionId && (
-                <div className="mb-6">
+                <div style={{ marginBottom: '2rem' }}>
                   <button
                     onClick={() => {
                       const downloadUrl = getApiEndpoint(
@@ -465,24 +426,14 @@ function App() {
                       );
                       window.location.href = downloadUrl;
                     }}
-                    className="w-full inline-flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                    className="btn btn-success btn-full"
                   >
-                    <svg
-                      className="mr-2 w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                      />
+                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                     <span>Download Project Files</span>
                   </button>
-                  <p className="mt-2 text-xs text-gray-500 text-center">
+                  <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)', textAlign: 'center' }}>
                     Download the complete project as a ZIP file to customize or
                     deploy manually
                   </p>
@@ -490,18 +441,19 @@ function App() {
               )}
 
               {!result.success && result.error && (
-                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-800">
-                    <strong>Error:</strong> {result.error}
+                <div className="info-box error">
+                  <p>
+                    <strong>❌ Error:</strong> {result.error}
                   </p>
                 </div>
               )}
 
               <button
                 onClick={handleReset}
-                className="w-full bg-gray-600 text-white py-3 px-6 rounded-md font-medium hover:bg-gray-700 transition-colors"
+                className="btn btn-secondary btn-full"
               >
-                Generate Another Application
+                <span>🔄</span>
+                <span>Generate Another Application</span>
               </button>
             </div>
           )}

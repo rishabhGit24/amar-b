@@ -1,5 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+// Import to ensure React Three Fiber types are loaded
+import '@react-three/fiber';
 import App from "./App";
 import "./index.css";
 import reportWebVitals from "./reportWebVitals";
