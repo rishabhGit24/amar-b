@@ -12,8 +12,8 @@ export interface GenerateResponse {
 }
 
 export interface ProgressUpdate {
-  type: 'connection' | 'progress' | 'error' | 'complete';
-  agent?: 'planner' | 'builder' | 'deployer';
+  type: 'connection' | 'progress' | 'error' | 'complete' | 'pong';
+  agent?: 'planner' | 'builder' | 'deployer' | 'tester' | 'finalize' | 'supervisor' | 'system';
   status?: 'running' | 'completed' | 'failed';
   message: string;
   details?: string;

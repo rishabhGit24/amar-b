@@ -79,10 +79,15 @@ function App() {
 
     ws.onmessage = (event) => {
       const update: ProgressUpdate = JSON.parse(event.data);
+      console.log("WebSocket message received:", update); // Debug log
       setProgressUpdates((prev) => [...prev, update]);
 
       // Check if workflow is complete
       if (update.type === "complete") {
+        console.log(
+          "Complete message received with deployment_url:",
+          update.deployment_url
+        ); // Debug log
         // If deployment URL is in the message, create result immediately
         if (update.deployment_url) {
           setResult({
@@ -127,11 +132,45 @@ function App() {
         update.details &&
         update.details.includes("Deployment URL:")
       ) {
+        console.log(
+          "Deployment URL found in progress details:",
+          update.details
+        ); // Debug log
         // Extract URL from details if present
         const urlMatch = update.details.match(
           /Deployment URL:\s*(https?:\/\/[^\s]+)/
         );
         if (urlMatch && urlMatch[1]) {
+          setResult({
+            success: true,
+            url: urlMatch[1],
+            execution_time: 0,
+            project_summary: {
+              page_count: 0,
+              component_count: 0,
+              file_count: 0,
+            },
+          });
+          setIsGenerating(false);
+          // Still fetch full result
+          fetchResult(sessionId);
+        }
+      }
+
+      // ADDITIONAL CHECK: Look for finalize agent completion with deployment URL in details
+      if (
+        update.type === "progress" &&
+        update.agent === "finalize" &&
+        update.status === "completed" &&
+        update.details
+      ) {
+        console.log("Finalize message received:", update.details); // Debug log
+        // Extract URL from details if present
+        const urlMatch = update.details.match(
+          /🌐 Deployment URL:\s*(https?:\/\/[^\s]+)/
+        );
+        if (urlMatch && urlMatch[1]) {
+          console.log("Extracted deployment URL from finalize:", urlMatch[1]); // Debug log
           setResult({
             success: true,
             url: urlMatch[1],
