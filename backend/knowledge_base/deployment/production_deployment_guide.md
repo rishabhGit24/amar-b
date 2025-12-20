@@ -5,6 +5,7 @@
 ### 1. Vercel + Railway/Render (RECOMMENDED for Startups)
 
 **Frontend (Vercel)**:
+
 - Automatic deployments from Git
 - Global CDN
 - Serverless functions
@@ -13,6 +14,7 @@
 - Cost: $0-20/month
 
 **Backend (Railway/Render)**:
+
 - Easy setup
 - Auto-scaling
 - Free SSL
@@ -26,6 +28,7 @@
 ### 2. AWS (Best for Scale)
 
 **Services**:
+
 - Frontend: S3 + CloudFront or Amplify
 - Backend: ECS (Fargate) or EC2
 - Database: MongoDB Atlas or DocumentDB
@@ -40,6 +43,7 @@
 ### 3. DigitalOcean (Good Balance)
 
 **Services**:
+
 - App Platform (frontend + backend)
 - Managed MongoDB
 - Spaces (S3-compatible storage)
@@ -52,6 +56,7 @@
 ## Step-by-Step: Vercel + Railway Deployment
 
 ### Prerequisites
+
 ```bash
 # Install CLIs
 npm install -g vercel
@@ -65,6 +70,7 @@ railway login
 ### Frontend Deployment (Vercel)
 
 **1. Prepare Next.js App**:
+
 ```javascript
 // next.config.js
 module.exports = {
@@ -72,12 +78,13 @@ module.exports = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },
   images: {
-    domains: ['your-backend-domain.com'],
+    domains: ["your-backend-domain.com"],
   },
 };
 ```
 
 **2. Deploy**:
+
 ```bash
 cd frontend
 vercel
@@ -87,6 +94,7 @@ vercel
 ```
 
 **3. Environment Variables** (Vercel Dashboard):
+
 ```
 NEXT_PUBLIC_API_URL=https://your-backend.railway.app
 NEXT_PUBLIC_SOCKET_URL=https://your-backend.railway.app
@@ -95,16 +103,18 @@ NEXT_PUBLIC_SOCKET_URL=https://your-backend.railway.app
 ### Backend Deployment (Railway)
 
 **1. Prepare Express App**:
+
 ```javascript
 // server.js
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
 ```
 
 **2. Create railway.json**:
+
 ```json
 {
   "$schema": "https://railway.app/railway.schema.json",
@@ -120,6 +130,7 @@ app.listen(PORT, '0.0.0.0', () => {
 ```
 
 **3. Deploy**:
+
 ```bash
 cd backend
 railway init
@@ -129,6 +140,7 @@ railway up
 ```
 
 **4. Environment Variables** (Railway Dashboard):
+
 ```
 NODE_ENV=production
 PORT=5000
@@ -143,16 +155,19 @@ FRONTEND_URL=https://your-app.vercel.app
 ### Database Setup (MongoDB Atlas)
 
 **1. Create Cluster**:
+
 - Go to mongodb.com/cloud/atlas
 - Create free M0 cluster
 - Choose region close to your backend
 
 **2. Configure**:
+
 - Network Access: Add 0.0.0.0/0 (allow all)
 - Database Access: Create user
 - Get connection string
 
 **3. Connection String**:
+
 ```
 mongodb+srv://username:password@cluster.mongodb.net/dbname?retryWrites=true&w=majority
 ```
@@ -160,6 +175,7 @@ mongodb+srv://username:password@cluster.mongodb.net/dbname?retryWrites=true&w=ma
 ## Environment Variables Management
 
 ### Development (.env.local)
+
 ```bash
 # Frontend
 NEXT_PUBLIC_API_URL=http://localhost:5000
@@ -175,9 +191,11 @@ FRONTEND_URL=http://localhost:3000
 ```
 
 ### Production
+
 **Never commit secrets!**
 
 Use:
+
 - Vercel: Dashboard → Settings → Environment Variables
 - Railway: Dashboard → Variables
 - AWS: Systems Manager Parameter Store
@@ -202,7 +220,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
-          node-version: '20'
+          node-version: "20"
       - run: npm ci
       - run: npm test
 
@@ -231,6 +249,7 @@ jobs:
 ## Docker Deployment
 
 ### Dockerfile (Backend)
+
 ```dockerfile
 FROM node:20-alpine
 
@@ -247,6 +266,7 @@ CMD ["npm", "start"]
 ```
 
 ### Dockerfile (Frontend)
+
 ```dockerfile
 FROM node:20-alpine AS builder
 
@@ -269,8 +289,9 @@ CMD ["npm", "start"]
 ```
 
 ### docker-compose.yml
+
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   frontend:
@@ -306,11 +327,13 @@ volumes:
 ## SSL/HTTPS Setup
 
 ### Automatic (Vercel/Railway)
+
 - SSL certificates automatically provisioned
 - HTTPS enforced by default
 - No configuration needed
 
 ### Manual (AWS/DigitalOcean)
+
 ```bash
 # Using Let's Encrypt with Certbot
 sudo apt-get update
@@ -326,25 +349,26 @@ sudo certbot renew --dry-run
 ## Performance Optimization
 
 ### Frontend
+
 ```javascript
 // next.config.js
 module.exports = {
   compress: true,
   poweredByHeader: false,
   generateEtags: true,
-  
+
   images: {
-    formats: ['image/webp'],
+    formats: ["image/webp"],
     deviceSizes: [640, 750, 828, 1080, 1200],
   },
-  
+
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.optimization.splitChunks.cacheGroups = {
         vendor: {
           test: /[\\/]node_modules[\\/]/,
-          name: 'vendors',
-          chunks: 'all',
+          name: "vendors",
+          chunks: "all",
         },
       };
     }
@@ -354,14 +378,15 @@ module.exports = {
 ```
 
 ### Backend
+
 ```javascript
 // Enable compression
-const compression = require('compression');
+const compression = require("compression");
 app.use(compression());
 
 // Enable caching
 app.use((req, res, next) => {
-  res.set('Cache-Control', 'public, max-age=300');
+  res.set("Cache-Control", "public, max-age=300");
   next();
 });
 
@@ -375,9 +400,10 @@ mongoose.connect(MONGODB_URI, {
 ## Monitoring and Logging
 
 ### Sentry (Error Tracking)
+
 ```javascript
 // Frontend
-import * as Sentry from '@sentry/nextjs';
+import * as Sentry from "@sentry/nextjs";
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -385,7 +411,7 @@ Sentry.init({
 });
 
 // Backend
-const Sentry = require('@sentry/node');
+const Sentry = require("@sentry/node");
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -394,46 +420,50 @@ Sentry.init({
 ```
 
 ### Winston (Logging)
+
 ```javascript
-const winston = require('winston');
+const winston = require("winston");
 
 const logger = winston.createLogger({
-  level: 'info',
+  level: "info",
   format: winston.format.json(),
   transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
+    new winston.transports.File({ filename: "error.log", level: "error" }),
+    new winston.transports.File({ filename: "combined.log" }),
   ],
 });
 
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.simple(),
-  }));
+if (process.env.NODE_ENV !== "production") {
+  logger.add(
+    new winston.transports.Console({
+      format: winston.format.simple(),
+    })
+  );
 }
 ```
 
 ## Health Checks
 
 ### Backend Health Endpoint
+
 ```javascript
-app.get('/health', async (req, res) => {
+app.get("/health", async (req, res) => {
   const health = {
     uptime: process.uptime(),
     timestamp: Date.now(),
-    status: 'OK',
-    database: 'disconnected',
+    status: "OK",
+    database: "disconnected",
   };
 
   try {
     await mongoose.connection.db.admin().ping();
-    health.database = 'connected';
+    health.database = "connected";
   } catch (error) {
-    health.database = 'disconnected';
-    health.status = 'ERROR';
+    health.database = "disconnected";
+    health.status = "ERROR";
   }
 
-  const statusCode = health.status === 'OK' ? 200 : 503;
+  const statusCode = health.status === "OK" ? 200 : 503;
   res.status(statusCode).json(health);
 });
 ```
@@ -441,11 +471,13 @@ app.get('/health', async (req, res) => {
 ## Backup Strategy
 
 ### MongoDB Atlas Backups
+
 - Automatic daily backups
 - Point-in-time recovery
 - Download backups manually
 
 ### Manual Backup Script
+
 ```bash
 #!/bin/bash
 # backup.sh
@@ -466,6 +498,7 @@ find $BACKUP_DIR -type d -mtime +7 -exec rm -rf {} \;
 ## Scaling Strategy
 
 ### Horizontal Scaling
+
 ```yaml
 # Railway: Scale replicas
 replicas: 3
@@ -478,11 +511,13 @@ replicas: 3
 ```
 
 ### Load Balancing
+
 - Railway: Automatic
 - AWS: Application Load Balancer
 - DigitalOcean: Load Balancer service
 
 ### Database Scaling
+
 - MongoDB Atlas: Upgrade cluster tier
 - Read replicas for read-heavy workloads
 - Sharding for very large datasets
@@ -507,6 +542,7 @@ replicas: 3
 ## Cost Optimization
 
 ### Tips
+
 1. Use free tiers when possible
 2. Enable auto-scaling (scale down when idle)
 3. Use CDN for static assets
@@ -521,6 +557,7 @@ replicas: 3
 ## Deployment Checklist
 
 ### Pre-Deployment
+
 - [ ] All tests passing
 - [ ] Environment variables configured
 - [ ] Database migrations ready
@@ -530,6 +567,7 @@ replicas: 3
 - [ ] Documentation updated
 
 ### Deployment
+
 - [ ] Deploy to staging first
 - [ ] Run smoke tests
 - [ ] Check health endpoints
@@ -539,6 +577,7 @@ replicas: 3
 - [ ] Check performance metrics
 
 ### Post-Deployment
+
 - [ ] Monitor for errors
 - [ ] Check user feedback
 - [ ] Verify analytics
@@ -549,6 +588,7 @@ replicas: 3
 ## Rollback Strategy
 
 ### Quick Rollback
+
 ```bash
 # Vercel
 vercel rollback
@@ -562,6 +602,7 @@ git push origin main
 ```
 
 ### Database Rollback
+
 - Keep migration scripts
 - Test rollback procedures
 - Have backup ready
@@ -570,6 +611,7 @@ git push origin main
 ## Conclusion
 
 **Recommended for Issue Reporting App**:
+
 - Frontend: Vercel
 - Backend: Railway or Render
 - Database: MongoDB Atlas
@@ -580,6 +622,7 @@ git push origin main
 - Scalability: Excellent
 
 This setup provides:
+
 - ✅ Easy deployment
 - ✅ Auto-scaling
 - ✅ High availability

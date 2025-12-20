@@ -24,10 +24,6 @@
     ]
   },
   "include": [
-    "src",
-    "src/**/*.d.ts"
-  ],
-  "files": [
-    "src/react-three-fiber.d.ts"
+    "src"
   ]
 }
