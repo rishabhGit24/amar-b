@@ -254,19 +254,29 @@ class PlannerAgent:
         Returns:
             Formatted prompt string for LLM
         """
-        context_str = ""
-        if context.get('relevant_context'):
-            context_str = f"""
-Previous context from this session:
-{json.dumps(context['relevant_context'], indent=2)}
-"""
+        # Get RAG service to retrieve system prompt
+        from services.rag_service import get_rag_service
+        rag_service = get_rag_service()
         
-        prompt = f"""
+        # Try to get comprehensive system prompt from knowledge base
+        system_prompt = ""
+        if rag_service.is_enabled:
+            try:
+                # Query for planner agent system prompt
+                rag_result = asyncio.run(rag_service.retrieve_context(
+                    "planner agent system prompt comprehensive instructions",
+                    top_k=1
+                ))
+                if rag_result.get('retrieved_docs'):
+                    system_prompt = rag_result['retrieved_docs'][0]['content']
+                    print(f"✓ Loaded comprehensive planner system prompt from RAG ({len(system_prompt)} chars)")
+            except Exception as e:
+                print(f"⚠️ Failed to load system prompt from RAG: {e}")
+        
+        # Fallback to basic prompt if RAG not available or failed
+        if not system_prompt:
+            system_prompt = """
 You are a web application planner. Analyze the user's request and create a detailed implementation plan for a React application.
-
-{context_str}
-
-User Request: "{description}"
 
 CRITICAL DEPLOYMENT CONTEXT:
 - This application will be deployed to Vercel/Netlify automatically
@@ -281,6 +291,22 @@ IMPORTANT CONSTRAINTS:
 - Include routing configuration
 - Detect if backend API endpoints are needed
 - Make reasonable assumptions for ambiguous requirements
+"""
+            print("⚠️ Using fallback planner system prompt")
+        
+        context_str = ""
+        if context.get('relevant_context'):
+            context_str = f"""
+Previous context from this session:
+{json.dumps(context['relevant_context'], indent=2)}
+"""
+        
+        prompt = f"""
+{system_prompt}
+
+{context_str}
+
+User Request: "{description}"
 
 BACKEND REQUIREMENT DETECTION:
 Carefully analyze the user request for these indicators that backend logic is needed:

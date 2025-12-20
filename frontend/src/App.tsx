@@ -130,7 +130,7 @@ function App() {
         update.agent === "deployer" &&
         update.status === "completed" &&
         update.details &&
-        update.details.includes("Deployment URL:")
+        update.details.includes("🌐 Deployment URL:")
       ) {
         console.log(
           "Deployment URL found in progress details:",
@@ -138,9 +138,10 @@ function App() {
         ); // Debug log
         // Extract URL from details if present
         const urlMatch = update.details.match(
-          /Deployment URL:\s*(https?:\/\/[^\s]+)/
+          /🌐 Deployment URL:\s*(https?:\/\/[^\s\n]+)/
         );
         if (urlMatch && urlMatch[1]) {
+          console.log("Extracted deployment URL from deployer:", urlMatch[1]); // Debug log
           setResult({
             success: true,
             url: urlMatch[1],

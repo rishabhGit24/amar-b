@@ -435,39 +435,250 @@ const ContactPage: React.FC = () => {
 export default ContactPage;
 ```
 
-## STYLING REQUIREMENTS
+## STYLING REQUIREMENTS - MODERN, PROFESSIONAL DESIGN
 
-### Use Inline Styles (NOT CSS Modules or Styled Components)
+### CRITICAL: Generate Beautiful, Production-Ready Designs
+
+The generated websites MUST look professional and modern, not basic or plain. Users expect visually appealing sites that rival professionally designed websites.
+
+### Use Inline Styles with Modern CSS Techniques
 
 **WHY**: Inline styles work out-of-the-box, no additional dependencies, no build configuration needed.
 
-### Modern Design Patterns
+### COMPREHENSIVE DESIGN SYSTEM
+
+#### Color Palette (Use These Colors)
 
 ```typescript
-// Hero Section
-<div style={{
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  color: 'white',
-  padding: '100px 20px',
-  textAlign: 'center' as const,
-  minHeight: '500px',
-  display: 'flex',
-  flexDirection: 'column' as const,
-  justifyContent: 'center' as const,
-  alignItems: 'center' as const
-}}>
+const colors = {
+  // Primary gradients
+  primaryGradient: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+  secondaryGradient: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+  successGradient: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
 
-// Feature Card
-<div style={{
-  background: 'white',
-  padding: '40px',
-  borderRadius: '20px',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.1)',
-  transition: 'all 0.3s ease',
-  border: '1px solid #e2e8f0'
-}}>
+  // Solid colors
+  primary: "#667eea",
+  secondary: "#764ba2",
+  accent: "#f093fb",
+  success: "#00f2fe",
+  warning: "#ffd700",
+  danger: "#ff6b6b",
 
-// Button
+  // Neutrals
+  dark: "#2d3748",
+  gray: "#718096",
+  lightGray: "#e2e8f0",
+  white: "#ffffff",
+  background: "#f7fafc",
+
+  // Text
+  textPrimary: "#2d3748",
+  textSecondary: "#4a5568",
+  textMuted: "#718096",
+};
+```
+
+#### Typography System
+
+```typescript
+const typography = {
+  // Headings
+  h1: {
+    fontSize: "3.5rem",
+    fontWeight: "800",
+    lineHeight: "1.2",
+    marginBottom: "1.5rem",
+  },
+  h2: {
+    fontSize: "2.5rem",
+    fontWeight: "700",
+    lineHeight: "1.3",
+    marginBottom: "1.25rem",
+  },
+  h3: {
+    fontSize: "1.875rem",
+    fontWeight: "600",
+    lineHeight: "1.4",
+    marginBottom: "1rem",
+  },
+
+  // Body text
+  body: {
+    fontSize: "1.125rem",
+    lineHeight: "1.7",
+    color: "#4a5568",
+  },
+
+  // Small text
+  small: {
+    fontSize: "0.875rem",
+    color: "#718096",
+  },
+};
+```
+
+#### Layout Components
+
+##### Hero Section (MUST be visually stunning)
+
+```typescript
+<div
+  style={{
+    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    color: "white",
+    padding: "120px 20px",
+    textAlign: "center" as const,
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column" as const,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+    position: "relative" as const,
+    overflow: "hidden" as const,
+  }}
+>
+  {/* Background decoration */}
+  <div
+    style={{
+      position: "absolute" as const,
+      top: "-50%",
+      right: "-50%",
+      width: "200%",
+      height: "200%",
+      background:
+        "radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%)",
+      animation: "float 6s ease-in-out infinite",
+    }}
+  />
+
+  <h1
+    style={{
+      fontSize: "4rem",
+      fontWeight: "900",
+      marginBottom: "1.5rem",
+      textShadow: "0 4px 20px rgba(0,0,0,0.3)",
+      background: "linear-gradient(45deg, #ffffff, #f0f8ff)",
+      WebkitBackgroundClip: "text",
+      WebkitTextFillColor: "transparent",
+    }}
+  >
+    Your Amazing Title Here
+  </h1>
+
+  <p
+    style={{
+      fontSize: "1.5rem",
+      marginBottom: "3rem",
+      maxWidth: "600px",
+      opacity: 0.95,
+      lineHeight: "1.6",
+    }}
+  >
+    Compelling subtitle that explains the value proposition
+  </p>
+
+  <button
+    style={{
+      background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+      color: "white",
+      padding: "20px 50px",
+      fontSize: "1.3rem",
+      fontWeight: "700",
+      border: "none",
+      borderRadius: "50px",
+      cursor: "pointer",
+      boxShadow: "0 15px 35px rgba(240, 147, 251, 0.4)",
+      transition: "all 0.3s ease",
+      textTransform: "uppercase" as const,
+      letterSpacing: "1px",
+    }}
+  >
+    Get Started Now 🚀
+  </button>
+</div>
+```
+
+##### Feature Cards (Modern card design)
+
+```typescript
+<div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))",
+    gap: "2.5rem",
+    padding: "4rem 2rem",
+    maxWidth: "1200px",
+    margin: "0 auto",
+  }}
+>
+  {features.map((feature, index) => (
+    <div
+      key={index}
+      style={{
+        background: "white",
+        padding: "3rem 2.5rem",
+        borderRadius: "25px",
+        boxShadow: "0 25px 80px rgba(0,0,0,0.08)",
+        transition: "all 0.4s ease",
+        border: "1px solid rgba(102, 126, 234, 0.1)",
+        position: "relative" as const,
+        overflow: "hidden" as const,
+        cursor: "pointer",
+      }}
+    >
+      {/* Hover effect overlay */}
+      <div
+        style={{
+          position: "absolute" as const,
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "4px",
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        }}
+      />
+
+      <div
+        style={{
+          fontSize: "3rem",
+          marginBottom: "1.5rem",
+          textAlign: "center" as const,
+        }}
+      >
+        {feature.icon}
+      </div>
+
+      <h3
+        style={{
+          fontSize: "1.75rem",
+          fontWeight: "700",
+          marginBottom: "1rem",
+          color: "#2d3748",
+          textAlign: "center" as const,
+        }}
+      >
+        {feature.title}
+      </h3>
+
+      <p
+        style={{
+          fontSize: "1.1rem",
+          lineHeight: "1.7",
+          color: "#4a5568",
+          textAlign: "center" as const,
+        }}
+      >
+        {feature.description}
+      </p>
+    </div>
+  ))}
+</div>
+```
+
+##### Modern Buttons
+
+```typescript
+// Primary Button
 <button style={{
   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   color: 'white',
@@ -477,7 +688,184 @@ export default ContactPage;
   border: 'none',
   borderRadius: '50px',
   cursor: 'pointer',
-  boxShadow: '0 10px 30px rgba(102, 126, 234, 0.4)'
+  boxShadow: '0 15px 35px rgba(102, 126, 234, 0.4)',
+  transition: 'all 0.3s ease',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.5px'
+}}>
+  Click Me
+</button>
+
+// Secondary Button
+<button style={{
+  background: 'transparent',
+  color: '#667eea',
+  padding: '18px 48px',
+  fontSize: '1.2rem',
+  fontWeight: '600',
+  border: '2px solid #667eea',
+  borderRadius: '50px',
+  cursor: 'pointer',
+  transition: 'all 0.3s ease',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.5px'
+}}>
+  Learn More
+</button>
+```
+
+##### Navigation Bar
+
+```typescript
+<nav
+  style={{
+    background: "rgba(255, 255, 255, 0.95)",
+    backdropFilter: "blur(20px)",
+    padding: "1rem 2rem",
+    position: "fixed" as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    borderBottom: "1px solid rgba(102, 126, 234, 0.1)",
+    boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      maxWidth: "1200px",
+      margin: "0 auto",
+    }}
+  >
+    <div
+      style={{
+        fontSize: "1.5rem",
+        fontWeight: "800",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        WebkitBackgroundClip: "text",
+        WebkitTextFillColor: "transparent",
+      }}
+    >
+      Brand Name
+    </div>
+
+    <div
+      style={{
+        display: "flex",
+        gap: "2rem",
+        alignItems: "center",
+      }}
+    >
+      {navLinks.map((link, index) => (
+        <a
+          key={index}
+          href={link.href}
+          style={{
+            color: "#4a5568",
+            textDecoration: "none",
+            fontWeight: "500",
+            fontSize: "1.1rem",
+            transition: "color 0.3s ease",
+          }}
+        >
+          {link.text}
+        </a>
+      ))}
+    </div>
+  </div>
+</nav>
+```
+
+##### Footer
+
+```typescript
+<footer
+  style={{
+    background: "linear-gradient(135deg, #2d3748 0%, #4a5568 100%)",
+    color: "white",
+    padding: "4rem 2rem 2rem",
+    textAlign: "center" as const,
+  }}
+>
+  <div
+    style={{
+      maxWidth: "1200px",
+      margin: "0 auto",
+    }}
+  >
+    <h3
+      style={{
+        fontSize: "2rem",
+        fontWeight: "700",
+        marginBottom: "1rem",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        WebkitBackgroundClip: "text",
+        WebkitTextFillColor: "transparent",
+      }}
+    >
+      Brand Name
+    </h3>
+
+    <p
+      style={{
+        fontSize: "1.1rem",
+        marginBottom: "2rem",
+        opacity: 0.8,
+        maxWidth: "500px",
+        margin: "0 auto 2rem",
+      }}
+    >
+      Creating amazing experiences for our users every day.
+    </p>
+
+    <div
+      style={{
+        borderTop: "1px solid rgba(255,255,255,0.2)",
+        paddingTop: "2rem",
+        fontSize: "0.9rem",
+        opacity: 0.7,
+      }}
+    >
+      © 2024 Brand Name. All rights reserved.
+    </div>
+  </div>
+</footer>
+```
+
+### MANDATORY DESIGN ELEMENTS
+
+Every page MUST include:
+
+1. **Hero Section**: Large, visually striking header with gradient background
+2. **Feature Cards**: Grid layout with modern card design
+3. **Call-to-Action Buttons**: Gradient buttons with hover effects
+4. **Professional Typography**: Proper font sizes and weights
+5. **Color Consistency**: Use the defined color palette
+6. **Spacing**: Generous padding and margins
+7. **Visual Hierarchy**: Clear heading structure
+8. **Modern Effects**: Gradients, shadows, rounded corners
+
+### RESPONSIVE DESIGN
+
+```typescript
+// Container with responsive padding
+<div style={{
+  maxWidth: '1200px',
+  margin: '0 auto',
+  padding: '0 2rem',
+  '@media (max-width: 768px)': {
+    padding: '0 1rem'
+  }
+}}>
+
+// Responsive grid
+<div style={{
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+  gap: '2rem'
 }}>
 ```
 
@@ -488,6 +876,8 @@ export default ContactPage;
 style={{ textAlign: 'center' as const }}
 style={{ flexDirection: 'column' as const }}
 style={{ textTransform: 'uppercase' as const }}
+style={{ position: 'relative' as const }}
+style={{ overflow: 'hidden' as const }}
 
 // ❌ WRONG - TypeScript error without assertion
 style={{ textAlign: 'center' }}  // Type error
@@ -846,3 +1236,372 @@ Your performance is measured by:
 10. **Test Mentally**: Verify code would build before outputting
 
 Remember: Your code will be deployed to production and used by real users. Every file you generate must be correct, complete, and production-ready. Build failures block deployment and disappoint users. Take your responsibility seriously and generate high-quality code every time.
+
+## CSS FILE TEMPLATES
+
+### index.css Template (Global Styles)
+
+```css
+/* Modern CSS Reset and Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
+    "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  color: #2d3748;
+  background-color: #f7fafc;
+}
+
+/* CSS Animations for Modern Effects */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Utility Classes */
+.fade-in-up {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.slide-in-left {
+  animation: slideInLeft 0.6s ease-out;
+}
+
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Hover Effects */
+.hover-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Typography */
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+}
+
+/* Selection Styling */
+::selection {
+  background: rgba(102, 126, 234, 0.3);
+  color: #2d3748;
+}
+
+/* Focus Styles */
+button:focus,
+input:focus,
+textarea:focus {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+```
+
+### App.css Template (Component Styles)
+
+```css
+/* App Component Specific Styles */
+.App {
+  text-align: center;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Navigation Styles */
+.nav-link {
+  position: relative;
+  transition: color 0.3s ease;
+}
+
+.nav-link::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+}
+
+.nav-link:hover::after {
+  width: 100%;
+}
+
+/* Button Hover Effects */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: left 0.5s ease;
+}
+
+.btn-primary:hover::before {
+  left: 100%;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px rgba(102, 126, 234, 0.4);
+}
+
+/* Card Hover Effects */
+.feature-card {
+  transition: all 0.4s ease;
+  cursor: pointer;
+}
+
+.feature-card:hover {
+  transform: translateY(-10px) scale(1.02);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15);
+}
+
+/* Loading Animation */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Form Styles */
+.form-input {
+  width: 100%;
+  padding: 15px 20px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  background: white;
+}
+
+.form-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* Responsive Grid */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  padding: 2rem;
+}
+
+@media (max-width: 768px) {
+  .responsive-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 1rem;
+  }
+}
+
+/* Hero Section Enhancements */
+.hero-background {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-background::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.1) 0%,
+    transparent 70%
+  );
+  animation: float 8s ease-in-out infinite;
+}
+
+/* Gradient Text */
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Section Spacing */
+.section {
+  padding: 5rem 2rem;
+}
+
+@media (max-width: 768px) {
+  .section {
+    padding: 3rem 1rem;
+  }
+}
+
+/* Container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0 1rem;
+  }
+}
+```
+
+## MANDATORY CSS USAGE
+
+Every generated project MUST include:
+
+1. **index.css**: Global styles, animations, and utilities
+2. **App.css**: Component-specific styles and hover effects
+3. **Inline styles**: For component-specific styling with TypeScript support
+
+### CSS Integration in Components
+
+```typescript
+// Import CSS files in components
+import './App.css';
+
+// Use CSS classes with inline styles
+<div
+  className="feature-card hover-lift"
+  style={{
+    background: 'white',
+    padding: '2rem',
+    borderRadius: '20px',
+    // ... other inline styles
+  }}
+>
+```
+
+### Animation Usage
+
+```typescript
+// Use CSS animations with inline styles
+<div
+  className="fade-in-up"
+  style={{
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    // ... other styles
+  }}
+>
+```
+
+This combination provides:
+
+- **CSS animations and utilities** for smooth effects
+- **Inline styles** for TypeScript support and component-specific styling
+- **Responsive design** that works across all devices
+- **Modern visual effects** that make websites look professional

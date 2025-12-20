@@ -589,10 +589,29 @@ code {
     
     def _create_page_generation_prompt(self, page: PageSpec, plan: Plan) -> str:
         """
-        Create prompt for generating page component
+        Create prompt for generating page component using RAG-enhanced system prompt
         
         Validates: Requirements 13.3
         """
+        # Get RAG service to retrieve system prompt
+        from services.rag_service import get_rag_service
+        rag_service = get_rag_service()
+        
+        # Try to get comprehensive system prompt from knowledge base
+        system_prompt = ""
+        if rag_service.is_enabled:
+            try:
+                # Query for builder agent system prompt
+                rag_result = asyncio.run(rag_service.retrieve_context(
+                    "builder agent system prompt comprehensive instructions styling requirements",
+                    top_k=1
+                ))
+                if rag_result.get('retrieved_docs'):
+                    system_prompt = rag_result['retrieved_docs'][0]['content']
+                    print(f"✓ Loaded comprehensive builder system prompt from RAG ({len(system_prompt)} chars)")
+            except Exception as e:
+                print(f"⚠️ Failed to load builder system prompt from RAG: {e}")
+        
         # Validate page attributes
         if not page:
             raise ValueError("Page specification is None")
@@ -663,12 +682,19 @@ const handleSubmit = async (data: FormData) => {{
         # Generate example imports for clarity (NO extensions for TypeScript 4.9.5)
         example_imports = '\n'.join([f"import {comp} from '../components/{comp}';" for comp in components_list])
         
-        prompt = f"""
+        # Use RAG system prompt if available, otherwise fallback
+        if system_prompt:
+            # Use comprehensive system prompt from RAG
+            prompt = f"""
+                    prompt = f"""
 🚀 PRODUCTION DEPLOYMENT CONTEXT:
 This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
 This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
 The application will be used by real users, so code quality, error handling, and user experience are CRITICAL.
 
+{system_prompt}
+
+CURRENT TASK:
 Generate a BEAUTIFUL, PRODUCTION-READY React TypeScript page component.
 
 Page: {page.name} | Route: {page.route}
@@ -679,56 +705,15 @@ IMPORTANT: Component Usage Guidelines
 - These components are already generated and have specific prop interfaces
 - Use components WITHOUT props first: <ComponentName />
 - If you need to pass props, only pass props that exist in the component's interface
-- Use the correct component for the correct purpose:
-  * MenuItem = individual menu items (name, description, price)
-  * MenuSection = container for multiple items (title, items array)
-  * MenuCategory = category group (title, items)
-  * Card = display card (title, description, image)
-- DO NOT pass props that don't exist - this causes TypeScript build errors
 - When in doubt, use components without props - they work standalone
 
 {backend_info}
-
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL: TypeScript 4.9.5 Configuration
-═══════════════════════════════════════════════════════════════════════════════
-- TypeScript version: 4.9.5 (EXACT - compatible with react-scripts 5.0.1)
-- Use TypeScript 4.9.5 syntax ONLY (no TypeScript 5.x features)
-- All imports MUST NOT include file extensions
-- TypeScript 4.9.5 with react-scripts 5.0.1 requires imports WITHOUT extensions
-
-═══════════════════════════════════════════════════════════════════════════════
-🚨 CRITICAL FILE STRUCTURE (MEMORIZE THIS):
-═══════════════════════════════════════════════════════════════════════════════
-
-THIS FILE LOCATION: src/pages/{page.name}.tsx
-COMPONENTS LOCATION: src/components/ComponentName.tsx
-
-CORRECT IMPORT PATH: '../components/ComponentName' (NO .tsx extension)
-❌ WRONG: '../components/ComponentName.tsx' (includes extension - WRONG for TypeScript 4.9.5!)
-❌ WRONG: './ComponentName.tsx' (wrong path AND extension - WRONG!)
-✅ CORRECT: '../components/ComponentName' (NO extension - TypeScript 4.9.5 resolves automatically)
 
 EXACT IMPORTS TO USE:
 ```typescript
 import React from 'react';
 {example_imports}
 ```
-
-═══════════════════════════════════════════════════════════════════════════════
-🎨 STYLING REQUIREMENTS - MAKE IT STUNNING:
-═══════════════════════════════════════════════════════════════════════════════
-
-USE INLINE STYLES WITH MODERN DESIGN:
-
-1. HERO SECTION (Top of page):
-```typescript
-<div style={{{{
-  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  color: 'white',
-  padding: '100px 20px',
-  textAlign: 'center' as const,
-  minHeight: '500px',
   display: 'flex',
   flexDirection: 'column' as const,
   justifyContent: 'center' as const,
