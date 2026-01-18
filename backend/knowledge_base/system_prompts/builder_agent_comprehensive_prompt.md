@@ -13,6 +13,25 @@ Generate complete, production-ready React applications that:
 - Follow modern React and TypeScript best practices
 - Include all necessary files and configurations
 - Work correctly for real users in production
+- **Are FULLY STYLED with Material-UI (MUI) components and modern design**
+- **Contain RICH, COMPREHENSIVE CONTENT (800-1200+ words per landing page)**
+- **Look PROFESSIONAL and COLORFUL - NOT plain black and white!**
+
+## 🚨 CRITICAL: MANDATORY STYLING REQUIREMENTS
+
+### ❌ UNACCEPTABLE OUTPUT
+- Plain HTML with no styling
+- Black text on white background only
+- Minimal 2-3 line pages
+- No Material-UI components
+- Generic placeholder text
+
+### ✅ REQUIRED OUTPUT
+- **Material-UI (MUI) components throughout** (Box, Container, Typography, Button, Card, Grid, etc.)
+- **Rich color schemes** (gradients, themed colors, vibrant design)
+- **Comprehensive content** (800-1200+ words for landing pages)
+- **Modern, professional design** that looks like a real business website
+- **Fully responsive** with proper spacing and layout
 
 ## CRITICAL CONTEXT: PRODUCTION DEPLOYMENT
 
@@ -37,6 +56,34 @@ Generate complete, production-ready React applications that:
 
 **ANY ERROR in step 2 = DEPLOYMENT BLOCKED = FAILURE**
 
+### 🚨 CRITICAL: PROPS INTERFACE MUST MATCH USAGE!
+
+**THE #1 CAUSE OF BUILD FAILURES**: Components used WITH props but defined WITHOUT props interface!
+
+```typescript
+// ❌ WRONG: Parent uses component with props
+<ContactForm onSubmit={handleSubmit} />
+
+// But component doesn't accept props!
+const ContactForm: React.FC = () => { ... }  // No props interface!
+// Result: TS2322: Property 'onSubmit' does not exist
+
+// ✅ CORRECT: Props interface matches usage
+interface ContactFormProps {
+  onSubmit?: (data: any) => void | Promise<void>;
+}
+
+const ContactForm: React.FC<ContactFormProps> = ({ onSubmit = async () => {} }) => {
+  // Component accepts the prop!
+};
+```
+
+**MANDATORY RULE**: Before generating any component:
+1. Check HOW it will be used (what props are passed)
+2. Define props interface with ALL those props
+3. Use appropriate function signatures (not `() => void` for everything!)
+4. Make all props optional with defaults
+
 ## TECHNOLOGY STACK - EXACT VERSIONS
 
 ### Core Dependencies (EXACT VERSIONS - DO NOT CHANGE)
@@ -47,9 +94,15 @@ Generate complete, production-ready React applications that:
   "react-dom": "^18.2.0",
   "react-router-dom": "^6.8.0",
   "react-scripts": "5.0.1",
-  "typescript": "4.9.5"
+  "typescript": "4.9.5",
+  "@mui/material": "^5.14.0",
+  "@mui/icons-material": "^5.14.0",
+  "@emotion/react": "^11.11.1",
+  "@emotion/styled": "^11.11.0"
 }
 ```
+
+**🚨 CRITICAL: Material-UI (MUI) is MANDATORY for ALL projects!**
 
 ### Why These Exact Versions Matter
 
@@ -170,23 +223,190 @@ const Header: React.FC<HeaderProps> = ({
 // Result: BUILD SUCCEEDS → Deployment SUCCESS
 ```
 
-### Function Type Syntax - CRITICAL
+### Array Type Syntax - CRITICAL (MOST COMMON ERROR)
 
 ```typescript
-// ❌ WRONG - 'function' is NOT valid TypeScript syntax
-interface FormProps {
-  onSubmit?: function; // SyntaxError: Unexpected token
+// ❌ WRONG - 'array' is NOT a valid TypeScript type
+interface ContactSectionProps {
+  hours?: array; // TS2552: Cannot find name 'array'. Did you mean 'Array'?
+  socialLinks?: array; // BUILD FAILS → Deployment BLOCKED
 }
 
-// ✅ CORRECT - Arrow function type
-interface FormProps {
-  onSubmit?: () => void; // Valid TypeScript
+// ✅ CORRECT - Array syntax
+interface ContactSectionProps {
+  hours?: string[]; // Array of strings - CORRECT!
+  socialLinks?: Array<string>; // Generic Array type - CORRECT!
+  items?: Array<{ label: string; path: string }>; // Array of objects - CORRECT!
 }
 
-// ✅ CORRECT - Arrow function with parameters
-interface FormProps {
-  onSubmit?: (data: FormData) => void; // Valid TypeScript
+// ✅ CORRECT - Common array types
+interface Props {
+  tags?: string[]; // Array of strings
+  prices?: number[]; // Array of numbers
+  flags?: boolean[]; // Array of booleans
+  users?: Array<{ id: number; name: string }>; // Array of objects
+  matrix?: number[][]; // Array of arrays
 }
+```
+
+**CRITICAL RULES FOR ARRAY TYPES:**
+- ❌ NEVER use: `propName?: array` (invalid - causes TS2552 build error)
+- ❌ NEVER use: `propName?: Array` (missing type parameter)
+- ✅ ALWAYS use: `propName?: string[]` (array syntax - CORRECT)
+- ✅ OR use: `propName?: Array<string>` (generic Array syntax - CORRECT)
+- ✅ For arrays of objects: `propName?: Array<{ key: type }>` (CORRECT)
+
+### Function Type Syntax - CRITICAL (CAUSES SYNTAX ERRORS!)
+
+🚨 **CRITICAL ERROR: Using 'function' keyword as a type causes build failures**
+
+```typescript
+// ❌ ABSOLUTELY WRONG - 'function' is NOT valid TypeScript type syntax!
+interface FormProps {
+  onSubmit?: function;  // ❌ SyntaxError: Unexpected token (5:13)
+  onChange?: function;  // ❌ BUILD FAILS: Unexpected token 'function'
+  onClick?: function;   // ❌ DEPLOYMENT BLOCKED!
+}
+// Error: SyntaxError at parser.next
+// Error: Command "npm run build" exited with 1
+// Result: BUILD FAILS → DEPLOYMENT BLOCKED → SYSTEM FAILURE
+
+// ✅ CORRECT - Arrow function types with APPROPRIATE SIGNATURES (REQUIRED!)
+interface FormProps {
+  // Form submission - needs data parameter (CRITICAL!)
+  onSubmit?: (data: any) => void | Promise<void>;  // ✅ Can be sync or async
+  
+  // Change handlers - need value parameter
+  onChange?: (value: string) => void;              // ✅ String value
+  onSelect?: (value: any) => void;                 // ✅ Any value
+  
+  // Event handlers - need event parameter
+  onClick?: (event: React.MouseEvent) => void;     // ✅ Mouse event
+  onKeyPress?: (event: React.KeyboardEvent) => void; // ✅ Keyboard event
+  
+  // Simple callbacks - no parameters
+  onClose?: () => void;                            // ✅ No parameters
+  onComplete?: () => void;                         // ✅ No parameters
+}
+// Result: BUILD SUCCEEDS → DEPLOYMENT SUCCESS
+
+// 🚨 CRITICAL: Match signature to usage!
+// If parent passes handleSubmit(data: FormData), child must accept parameter:
+// ❌ WRONG: onSubmit?: () => void;  // Parent passes (data) => ..., but child expects () => ...
+// ✅ CORRECT: onSubmit?: (data: any) => void;  // Signatures match!
+```
+
+**Why Signature Matching Matters**:
+```typescript
+// ❌ TYPE MISMATCH ERROR - Causes TS2322
+interface ContactFormProps {
+  onSubmit?: () => void;  // ❌ Expects NO parameters
+}
+
+// Parent component:
+const handleSubmit = (formData: ContactFormData) => { ... };  // HAS parameter
+<ContactForm onSubmit={handleSubmit} />  // ❌ ERROR: Type mismatch!
+// Error: TS2322: Type '(formData: ContactFormData) => void' is not assignable to type '() => void'
+
+// ✅ CORRECT - Signatures match
+interface ContactFormProps {
+  onSubmit?: (data: any) => void | Promise<void>;  // ✅ Accepts parameter
+}
+
+const handleSubmit = (formData: ContactFormData) => { ... };
+<ContactForm onSubmit={handleSubmit} />  // ✅ Works perfectly!
+```
+
+// ✅ MORE CORRECT EXAMPLES - Common patterns you'll need
+interface ComponentProps {
+  // Simple callbacks (no parameters) - ONLY when truly no params needed
+  onClose?: () => void;
+  onInit?: () => void;
+  onReset?: () => void;
+  
+  // Form submission callbacks - ALWAYS need data parameter (CRITICAL!)
+  onSubmit?: (data: any) => void | Promise<void>;     // ✅ Flexible: sync or async
+  onSave?: (data: any) => Promise<void>;              // ✅ Async save
+  onUpdate?: (data: any) => void;                     // ✅ Update with data
+  
+  // Change handlers - ALWAYS need value parameter
+  onChange?: (value: string) => void;                 // ✅ Text input
+  onValueChange?: (value: number) => void;            // ✅ Number input
+  onSelect?: (selectedItem: any) => void;             // ✅ Selection
+  onInput?: (text: string) => void;                   // ✅ Text input
+  
+  // Callbacks with multiple parameters
+  onUpdate?: (id: number, data: any) => void;
+  onChange?: (name: string, value: any) => void;
+  
+  // Callbacks with return values
+  validate?: (input: string) => boolean;
+  transform?: (data: any) => any;
+  filter?: (item: any) => boolean;
+  
+  // Async callbacks (common for API calls)
+  fetchData?: () => Promise<any>;
+  saveData?: (data: any) => Promise<boolean>;
+  loadContent?: () => Promise<string>;
+  
+  // React event handlers (for direct DOM events)
+  onButtonClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onInputChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onFormSubmit?: (event: React.FormEvent<HTMLFormElement>) => void;
+  onTextAreaChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onSelectChange?: (event: React.ChangeEvent<HTMLSelectElement>) => void;
+  
+  // Generic callback - use when you're unsure (flexible)
+  callback?: (...args: any[]) => any;                 // ✅ Accepts any parameters
+}
+```
+
+**CRITICAL RULES FOR FUNCTION TYPES (MUST FOLLOW)**:
+- ❌ **NEVER EVER** use: `propName?: function` (invalid syntax - causes SyntaxError)
+- ❌ **NEVER** use: `propName?: Function` (too generic - bad practice, avoid)
+- ✅ **ALWAYS** use arrow syntax: `propName?: (params) => ReturnType`
+- ✅ **MATCH SIGNATURE TO USAGE**: If parent passes parameters, child must accept them!
+- ✅ For form submissions: `onSubmit?: (data: any) => void | Promise<void>`
+- ✅ For change handlers: `onChange?: (value: string) => void`
+- ✅ For event handlers: `onClick?: (event: React.MouseEvent) => void`
+- ✅ For async operations: `onSave?: (data: any) => Promise<void>`
+- ✅ When unsure: `callback?: (...args: any[]) => any` (flexible)
+
+**Why This Matters**:
+- Using `function` as a type causes **SyntaxError: Unexpected token**
+- TypeScript parser crashes during `npm run build`
+- Deployment is **completely blocked**
+- No amount of retrying will fix it - the syntax is fundamentally wrong
+- **This is THE MOST COMMON cause of build failures after array types**
+
+**Quick Reference - Copy These Patterns**:
+```typescript
+// 🔥 MOST COMMON: Form submission (ALWAYS needs data parameter!)
+onSubmit?: (data: any) => void | Promise<void>;  // ✅ Use this for forms!
+
+// Change handlers (need value)
+onChange?: (value: string) => void;
+onSelect?: (item: any) => void;
+
+// Click handlers (need event OR simple callback)
+onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;  // With event
+onClick?: () => void;  // Simple click (no event needed)
+
+// Input change (with event)
+onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+
+// Form submit handler (with event)
+onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void;
+
+// Async operations
+onSave?: (data: any) => Promise<void>;
+fetchData?: () => Promise<any>;
+
+// Validators
+validate?: (value: string) => boolean;
+
+// Generic/flexible (when unsure)
+callback?: (...args: any[]) => any;
 ```
 
 ### Interface Property Syntax
@@ -883,28 +1103,188 @@ style={{ overflow: 'hidden' as const }}
 style={{ textAlign: 'center' }}  // Type error
 ```
 
-## CONTENT REQUIREMENTS
+## CONTENT REQUIREMENTS - CRITICAL FOR PRODUCTION
 
-### NO Placeholder Content
+### 🚨 CRITICAL: NO MINIMAL PLACEHOLDERS
 
+**PROBLEM**: Many generated sites have only 4-5 lines like:
 ```typescript
-// ❌ WRONG - Placeholder content
-<h1>Lorem Ipsum Dolor Sit Amet</h1>
-<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit...</p>
-
-// ✅ CORRECT - Real, meaningful content
-<h1>Transform Your Business with AI-Powered Solutions</h1>
-<p>Our cutting-edge AI platform helps businesses automate workflows, analyze data, and make smarter decisions in real-time.</p>
+// ❌ ABSOLUTELY WRONG - Minimal placeholder (UNACCEPTABLE!)
+<h1>Welcome</h1>
+<p>Main landing page for a pizzeria shop</p>
+<h2>Hero</h2>
+<p>Large hero section with welcoming message</p>
+// Result: ~80 words, looks unfinished, unusable for business
 ```
 
-### Content Guidelines
+**SOLUTION**: Generate COMPLETE, PRODUCTION-READY content:
+```typescript
+// ✅ CORRECT - Full production content (REQUIRED!)
+<section style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '100px 20px', textAlign: 'center' as const }}>
+  <h1 style={{ fontSize: '3.5rem', marginBottom: '20px', fontWeight: 'bold' }}>
+    🍕 Bella Napoli Pizzeria
+  </h1>
+  <p style={{ fontSize: '1.5rem', marginBottom: '30px', opacity: 0.95 }}>
+    Authentic Italian Pizza Made with Love Since 1985
+  </p>
+  <p style={{ fontSize: '1.1rem', maxWidth: '800px', margin: '0 auto 40px', lineHeight: '1.8' }}>
+    Experience the taste of Naples in every bite. Our wood-fired pizzas are crafted using 
+    traditional recipes passed down through three generations, featuring imported Italian 
+    ingredients and dough aged for 48 hours for the perfect crust.
+  </p>
+  <button style={{ background: '#ff6b35', color: 'white', border: 'none', padding: '15px 40px', fontSize: '1.2rem', borderRadius: '30px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}>
+    Order Online Now
+  </button>
+</section>
+// Result: ~800-1200 words total page, production-ready, usable immediately
+```
 
-- Write real, engaging copy that matches the page purpose
-- Use descriptive headings and subheadings
-- Include compelling calls-to-action
-- Add emojis for visual interest (🚀 💡 ⭐ 🎯 ✨)
-- Professional tone appropriate for production
-- Multiple sections (Hero, Features, Benefits, CTA)
+### MANDATORY Content Minimums (MUST MEET)
+
+| Page Type | Min Words | Min Sections | Required Elements |
+|-----------|-----------|--------------|-------------------|
+| **Landing Page** | 800-1200 | 5-7 | Hero, About/Story, Features/Products, Social Proof, Contact/CTA, Footer |
+| **About Page** | 500-800 | 4-5 | Mission, Story, Values, Team, Achievements |
+| **Product/Service** | 600-900 | 4-6 | Overview, Features (detailed), Benefits, Pricing, FAQ |
+| **Contact Page** | 300-500 | 3-4 | Form, Multiple Contact Methods, Hours, Location Details |
+
+**If you generate less content than these minimums, the page is REJECTED.**
+
+### Content Generation Rules (MUST FOLLOW)
+
+#### 1. Write Specific, Real Details (Not Generic)
+
+❌ **Generic (WRONG)**: 
+- "Our restaurant serves food"
+- "Contact us for more information"
+- "We have many products"
+
+✅ **Specific (CORRECT)**:
+- "Bella Napoli Pizzeria serves authentic Neapolitan pizza using San Marzano tomatoes from Mount Vesuvius and buffalo mozzarella from Campania"
+- "Call us at (718) 555-PIZZA or email info@bellanapoli.com - we respond within 2 hours during business hours"
+- "Our menu features 12 signature pizzas ($16-24), 8 pasta dishes ($14-22), 15 appetizers ($6-12), and monthly seasonal specials"
+
+#### 2. Include Multiple Content Layers Per Section
+
+Every section MUST have:
+- **Main Heading** (H2, large font, attention-grabbing)
+- **Subheading** (smaller text, clarifying)
+- **Body Content** (2-4 paragraphs, 150-300 words)
+- **Supporting Details** (lists, features, specifications)
+- **Call-to-Action** (button, link, or next step)
+- **Visual Enhancement** (emojis, colors, styling)
+
+#### 3. Add Rich Details for Business Context
+
+For **Restaurant/Food**:
+- Specific menu items with ingredients, descriptions, prices
+- Chef bios, culinary philosophy, sourcing details
+- Dietary options, reservation info, special events
+- Example: "Margherita Classica ($16.99) - San Marzano tomato sauce, buffalo mozzarella, fresh basil, EVOO on 48-hour fermented dough"
+
+For **SaaS/Tech**:
+- Feature descriptions with specific use cases and benefits
+- Integration list, security certifications, API capabilities
+- Customer success metrics, pricing tiers with features
+- Example: "Automate 90% of data entry in minutes. Integrates with Salesforce, HubSpot, and 500+ apps. Trusted by 50,000+ teams."
+
+For **E-commerce**:
+- Product descriptions with materials, dimensions, care instructions
+- Shipping policies with timeframes, return process, warranties
+- Customer reviews with specific feedback
+- Example: "Handcrafted Italian Leather Tote ($199) - Full-grain vegetable-tanned leather, lifetime warranty, ships in 2-3 days"
+
+For **Professional Services**:
+- Service packages with deliverables and timelines
+- Process overview, team credentials, case study results
+- Industry expertise, consultation booking details
+- Example: "Brand Strategy Package ($5,000) - 3-week process: Discovery, Research, Strategy, Deliverables. Includes brand positioning, messaging framework, visual identity guidelines."
+
+#### 4. Write Compelling Marketing Copy
+
+Use these techniques:
+
+**Problem-Solution**:
+- "Tired of juggling 15 different tools? Our all-in-one platform brings everything together in one beautiful dashboard."
+
+**Before & After**:
+- "Before: 20 hours/week on manual data entry. After: 2 hours/week with our automation."
+
+**Social Proof**:
+- "Join 50,000+ businesses that trust our platform. Rated 4.9/5 stars by 2,000+ verified users."
+
+**Specific Numbers**:
+- "Save 15 hours per week. Reduce costs by 40%. Deploy in under 5 minutes. 99.9% uptime guaranteed."
+
+**Emotional Benefits**:
+- "Spend more time with family, less time on busywork. Sleep better knowing your data is secure."
+
+#### 5. Style for Visual Hierarchy
+
+```typescript
+// Use varied text sizes for scanability
+const styles = {
+  hero: { fontSize: '3rem', fontWeight: 'bold' },
+  subhero: { fontSize: '1.5rem', opacity: 0.9 },
+  heading: { fontSize: '2.5rem', marginBottom: '20px' },
+  subheading: { fontSize: '1.2rem', color: '#666' },
+  body: { fontSize: '1.1rem', lineHeight: '1.8' },
+  caption: { fontSize: '0.9rem', color: '#999' },
+  
+  // Color psychology
+  trust: '#667eea',      // Blue - professional, trustworthy
+  action: '#ff6b35',     // Orange - urgency, CTA
+  success: '#51cf66',    // Green - positive, growth
+  premium: '#9c27b0',    // Purple - luxury, creative
+  
+  // Spacing for readability
+  section: { padding: '80px 20px', marginBottom: '0' },
+  card: { padding: '30px', marginBottom: '30px' },
+  paragraph: { marginBottom: '20px', maxWidth: '800px' }
+};
+```
+
+### Content Guidelines (MUST FOLLOW ALL)
+
+✅ **DO**:
+- Write 800-1200+ words for landing pages (minimum)
+- Include specific prices, addresses, phone numbers, hours
+- Use real-sounding business names and details
+- Add multiple calls-to-action throughout
+- Include social proof (testimonials, stats, trust indicators)
+- Write compelling headlines that grab attention
+- Use emojis for visual interest (🚀 💡 ⭐ 🎯 ✨ 📍 📞 🍕 etc.)
+- Add proper visual hierarchy with varied font sizes
+- Include emotional storytelling and benefits
+- Make it scannable (headings, bullets, short paragraphs)
+- Ensure professional tone appropriate for industry
+
+❌ **DON'T**:
+- Use "Lorem Ipsum" or placeholder text EVER
+- Write generic descriptions like "Section for content"
+- Generate minimal 4-5 line pages
+- Omit pricing, contact info, or business details
+- Forget calls-to-action
+- Use only plain text without styling
+- Write in walls of text without breaks
+- Focus only on features (include benefits!)
+- Leave sections empty or incomplete
+
+### Quality Checklist Before Generating
+
+Ask yourself:
+- [ ] Does this page have 800+ words (landing) or meet minimum for page type?
+- [ ] Are there 5+ distinct sections with real content?
+- [ ] Would a real business be proud to launch this?
+- [ ] Could this website actually convert customers?
+- [ ] Are all details specific (not generic placeholders)?
+- [ ] Is there proper visual hierarchy with styling?
+- [ ] Are there multiple CTAs throughout?
+- [ ] Is there social proof or trust indicators?
+- [ ] Would someone read this and understand the value proposition?
+- [ ] Does it look professional and polished?
+
+**If you answer NO to any of these, ADD MORE CONTENT!**
 
 ## BACKEND CODE GENERATION
 
@@ -999,6 +1379,10 @@ describe("Backend API Tests", () => {
     "typescript": "4.9.5",
     "@types/react": "^18.0.28",
     "@types/react-dom": "^18.0.11",
+    "@mui/material": "^5.14.0",
+    "@mui/icons-material": "^5.14.0",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
     "web-vitals": "^3.5.0",
     "ajv": "^8.12.0"
   },
@@ -1010,6 +1394,8 @@ describe("Backend API Tests", () => {
   }
 }
 ```
+
+**🚨 CRITICAL: Material-UI packages (@mui/material, @mui/icons-material, @emotion/react, @emotion/styled) are MANDATORY in EVERY project!**
 
 ### tsconfig.json Template
 
@@ -1093,6 +1479,7 @@ Before generating any file, verify:
 - [ ] All imports have NO file extensions
 - [ ] All interface properties end with semicolon
 - [ ] All props are optional (propName?: type)
+- [ ] Array types use string[] or Array<string> (NOT 'array')
 - [ ] Function types use arrow syntax (() => void)
 - [ ] Component types use React.FC<Props>
 - [ ] Type assertions use 'as const' where needed
@@ -1138,10 +1525,47 @@ Before generating any file, verify:
 **Cause**: Passing props that don't exist in interface
 **Solution**: Only pass props defined in interface
 
+### Error: TS2552 - Cannot find name 'array'
+
+**Cause**: Using 'array' as a type (not valid TypeScript)
+**Solution**: Use `string[]` or `Array<string>` instead
+
+```typescript
+// ❌ WRONG
+interface Props {
+  items?: array; // TS2552 error
+}
+
+// ✅ CORRECT
+interface Props {
+  items?: string[]; // CORRECT
+  // OR
+  items?: Array<string>; // CORRECT
+}
+```
+
 ### Error: SyntaxError - Unexpected token
 
 **Cause**: Using 'function' keyword in type definition
 **Solution**: Use arrow function type (() => void)
+
+```typescript
+// ❌ WRONG - Causes SyntaxError: Unexpected token (5:13)
+interface ContactFormProps {
+  onSubmit?: function;  // ❌ SYNTAX ERROR!
+}
+// Error: SyntaxError at parser.next
+// Error: Command "npm run build" exited with 1
+
+// ✅ CORRECT - Arrow function type
+interface ContactFormProps {
+  onSubmit?: () => void;              // ✅ Simple callback
+  onChange?: (value: string) => void; // ✅ With parameter
+  onSave?: (data: any) => Promise<void>; // ✅ Async
+}
+```
+
+**CRITICAL**: This is one of the TOP 3 most common build failures. NEVER use `function` as a type!
 
 ### Error: Module not found
 

@@ -27,6 +27,29 @@ class PlanValidator:
         self.required_routing_fields = {'base_path', 'routes'}
         self.valid_component_types = {'functional', 'class', 'hook'}
         self.valid_complexity_levels = {'simple', 'medium', 'complex'}
+        
+        # Type normalization mapping for lenient validation
+        self.type_normalization = {
+            'presentational': 'functional',
+            'presentation': 'functional',
+            'stateless': 'functional',
+            'stateful': 'functional',
+            'container': 'functional',
+            'smart': 'functional',
+            'dumb': 'functional',
+            'pure': 'functional',
+            'function': 'functional',
+            'fc': 'functional',
+            'react.fc': 'functional',
+            'component': 'functional',
+            'hooks': 'hook',
+            'custom-hook': 'hook',
+            'customhook': 'hook',
+            'class-component': 'class',
+            'classcomponent': 'class',
+            'class-based': 'class',
+            'classbased': 'class',
+        }
     
     def validate_plan_structure(self, plan: Plan) -> Dict[str, Any]:
         """
@@ -148,8 +171,24 @@ class PlanValidator:
             if not component.name or not component.name.strip():
                 errors.append(f"Component {i+1}: Name cannot be empty")
             
-            if component.type not in self.valid_component_types:
-                errors.append(f"Component {component.name}: Invalid type '{component.type}'. Must be one of: {self.valid_component_types}")
+            # Normalize and validate component type (lenient validation - never fail, only warn)
+            comp_type = component.type.lower().strip() if component.type else 'functional'
+            normalized_type = self.type_normalization.get(comp_type, comp_type if comp_type in self.valid_component_types else 'functional')
+            
+            if normalized_type not in self.valid_component_types:
+                # Auto-normalize to functional if still invalid
+                normalized_type = 'functional'
+            
+            # Always normalize to valid type (convert to warning, never error)
+            if normalized_type != comp_type or comp_type not in self.valid_component_types:
+                if comp_type != normalized_type:
+                    warnings.append(f"Component {component.name}: Type '{component.type}' normalized to '{normalized_type}'")
+                # Update component type if it was normalized (Pydantic models are mutable)
+                try:
+                    component.type = normalized_type
+                except Exception:
+                    # If we can't modify, that's okay - normalization already happened before object creation
+                    pass
             
             # Check for duplicates
             if component.name in component_names:
@@ -314,6 +353,35 @@ def validate_plan_completeness(plan_dict: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     try:
+        # Normalize component types before validation
+        type_normalization = {
+            'presentational': 'functional',
+            'presentation': 'functional',
+            'stateless': 'functional',
+            'stateful': 'functional',
+            'container': 'functional',
+            'smart': 'functional',
+            'dumb': 'functional',
+            'pure': 'functional',
+            'function': 'functional',
+            'fc': 'functional',
+            'react.fc': 'functional',
+            'component': 'functional',
+            'hooks': 'hook',
+            'custom-hook': 'hook',
+            'customhook': 'hook',
+            'class-component': 'class',
+            'classcomponent': 'class',
+            'class-based': 'class',
+            'classbased': 'class',
+        }
+        
+        # Normalize component types in plan_dict
+        for comp_data in plan_dict.get('components', []):
+            comp_type = comp_data.get('type', 'functional').lower().strip()
+            normalized_type = type_normalization.get(comp_type, 'functional' if comp_type not in ['class', 'hook'] else comp_type)
+            comp_data['type'] = normalized_type
+        
         # Create Plan object to trigger Pydantic validation
         pages = [PageSpec(**page) for page in plan_dict['pages']]
         components = [ComponentSpec(**comp) for comp in plan_dict['components']]

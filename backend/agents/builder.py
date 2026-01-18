@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -23,6 +24,31 @@ from models.core import (
 from services.memory import memory_manager
 from services.rate_limiter import get_rate_limiter, RateLimitExceeded, ExponentialBackoff
 from config import get_settings
+
+
+def _run_async_in_thread(coro):
+    """
+    Helper function to run async code from a sync context, even when an event loop is running.
+    Uses a thread pool executor to run the coroutine in a new event loop.
+    """
+    def run_in_new_loop():
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            return new_loop.run_until_complete(coro)
+        finally:
+            new_loop.close()
+    
+    try:
+        # Check if we're in an async context
+        asyncio.get_running_loop()
+        # We're in an async context, run in a thread with new event loop
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_new_loop)
+            return future.result()
+    except RuntimeError:
+        # No running loop, safe to use asyncio.run()
+        return asyncio.run(coro)
 
 
 class BuilderAgent:
@@ -274,6 +300,42 @@ test('renders app without crashing', () => {
         files['.npmrc'] = self._generate_npmrc()
         print(f"  ✓ Generated: vercel.json, netlify.toml, .npmrc")
         
+        # CRITICAL: Apply auto-correction to ALL TypeScript/TSX files before returning
+        # This ensures array type errors are fixed even if they weren't caught earlier
+        print(f"🔨 BUILDER: Applying code corrections to all TypeScript files...")
+        corrected_count = 0
+        for file_path, file_content in files.items():
+            if file_path.endswith(('.tsx', '.ts')) and isinstance(file_content, str):
+                original_content = file_content
+                # Check if file contains 'array' type before correction
+                import re
+                has_array_type = bool(re.search(r':\s*array\s*;', original_content, re.IGNORECASE))
+                if has_array_type:
+                    print(f"  ⚠️  Found 'array' type in {file_path}, applying correction...")
+                
+                corrected_content = self._auto_correct_code_errors(file_content)
+                if original_content != corrected_content:
+                    files[file_path] = corrected_content
+                    corrected_count += 1
+                    print(f"  ✓ Auto-corrected: {file_path}")
+                elif has_array_type:
+                    # If we detected array but correction didn't change anything, try more aggressive fix
+                    corrected_content = re.sub(
+                        r':\s*array\s*;',
+                        ': string[];',
+                        corrected_content,
+                        flags=re.IGNORECASE | re.MULTILINE
+                    )
+                    if corrected_content != original_content:
+                        files[file_path] = corrected_content
+                        corrected_count += 1
+                        print(f"  ✓ Auto-corrected (aggressive): {file_path}")
+        
+        if corrected_count > 0:
+            print(f"  ✓ Applied corrections to {corrected_count} file(s)")
+        else:
+            print(f"  ✓ All TypeScript files validated (no corrections needed)")
+        
         return files
     
     def _generate_package_json(self, plan: Plan) -> str:
@@ -292,6 +354,10 @@ test('renders app without crashing', () => {
             "typescript": "4.9.5",
             "@types/react": "^18.0.28",
             "@types/react-dom": "^18.0.11",
+            "@mui/material": "^5.14.0",
+            "@mui/icons-material": "^5.14.0",
+            "@emotion/react": "^11.11.1",
+            "@emotion/styled": "^11.11.0",
             "web-vitals": "^3.5.0",
             "ajv": "^8.12.0"  # Explicitly add ajv for compatibility with react-scripts 5.0.1
         }
@@ -602,11 +668,11 @@ code {
         if rag_service.is_enabled:
             try:
                 # Query for builder agent system prompt
-                rag_result = asyncio.run(rag_service.retrieve_context(
+                rag_result = _run_async_in_thread(rag_service.retrieve_context(
                     "builder agent system prompt comprehensive instructions styling requirements",
                     top_k=1
                 ))
-                if rag_result.get('retrieved_docs'):
+                if rag_result and rag_result.get('retrieved_docs'):
                     system_prompt = rag_result['retrieved_docs'][0]['content']
                     print(f"✓ Loaded comprehensive builder system prompt from RAG ({len(system_prompt)} chars)")
             except Exception as e:
@@ -622,7 +688,7 @@ code {
         
         # Check if this page needs backend integration
         backend_info = ""
-        if plan.backend_logic and plan.backend_logic.endpoints:
+        if plan.backend_logic and hasattr(plan.backend_logic, 'endpoints') and plan.backend_logic.endpoints:
             # Identify relevant endpoints for this page
             relevant_endpoints = self._identify_relevant_endpoints(page, plan.backend_logic)
             
@@ -686,8 +752,7 @@ const handleSubmit = async (data: FormData) => {{
         if system_prompt:
             # Use comprehensive system prompt from RAG
             prompt = f"""
-                    prompt = f"""
-🚀 PRODUCTION DEPLOYMENT CONTEXT:
+PRODUCTION DEPLOYMENT CONTEXT:
 This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
 This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
 The application will be used by real users, so code quality, error handling, and user experience are CRITICAL.
@@ -714,15 +779,19 @@ EXACT IMPORTS TO USE:
 import React from 'react';
 {example_imports}
 ```
+
+1. HERO SECTION:
+```typescript
+<div style={{
   display: 'flex',
   flexDirection: 'column' as const,
   justifyContent: 'center' as const,
   alignItems: 'center' as const
-}}}}>
-  <h1 style={{{{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '24px', textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}}}>
+}}>
+  <h1 style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '24px', textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}>
     Amazing Title
   </h1>
-  <p style={{{{ fontSize: '1.5rem', maxWidth: '700px', lineHeight: '1.8', opacity: 0.95 }}}}>
+  <p style={{ fontSize: '1.5rem', maxWidth: '700px', lineHeight: '1.8', opacity: 0.95 }}>
     Compelling description that engages users
   </p>
 </div>
@@ -730,26 +799,26 @@ import React from 'react';
 
 2. CONTENT SECTIONS:
 ```typescript
-<section style={{{{
+<section style={{
   padding: '80px 20px',
   maxWidth: '1200px',
   margin: '0 auto',
   background: '#ffffff'
-}}}}>
-  <h2 style={{{{ 
+}}>
+  <h2 style={{ 
     fontSize: '3rem', 
     textAlign: 'center' as const, 
     marginBottom: '60px',
     color: '#2d3748',
     fontWeight: 'bold'
-  }}}}>
+  }}>
     Section Title
   </h2>
-  <div style={{{{ 
+  <div style={{ 
     display: 'grid', 
     gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
     gap: '40px' 
-  }}}}>
+  }}>
     {{/* Content cards */}}
   </div>
 </section>
@@ -757,7 +826,7 @@ import React from 'react';
 
 3. FEATURE CARDS:
 ```typescript
-<div style={{{{
+<div style={{
   background: 'white',
   padding: '40px',
   borderRadius: '20px',
@@ -765,8 +834,8 @@ import React from 'react';
   transition: 'all 0.3s ease',
   border: '1px solid #e2e8f0',
   height: '100%'
-}}}}>
-  <div style={{{{ 
+}}>
+  <div style={{ 
     width: '60px', 
     height: '60px', 
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -775,13 +844,13 @@ import React from 'react';
     display: 'flex',
     alignItems: 'center' as const,
     justifyContent: 'center' as const
-  }}}}>
-    <span style={{{{ fontSize: '2rem' }}}}>🚀</span>
+  }}>
+    <span style={{ fontSize: '2rem' }}>🚀</span>
   </div>
-  <h3 style={{{{ fontSize: '1.8rem', color: '#2d3748', marginBottom: '16px', fontWeight: '600' }}}}>
+  <h3 style={{ fontSize: '1.8rem', color: '#2d3748', marginBottom: '16px', fontWeight: '600' }}>
     Feature Title
   </h3>
-  <p style={{{{ color: '#718096', fontSize: '1.1rem', lineHeight: '1.8' }}}}>
+  <p style={{ color: '#718096', fontSize: '1.1rem', lineHeight: '1.8' }}>
     Detailed feature description with real content
   </p>
 </div>
@@ -789,7 +858,7 @@ import React from 'react';
 
 4. BUTTONS:
 ```typescript
-<button style={{{{
+<button style={{
   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   color: 'white',
   padding: '18px 48px',
@@ -802,7 +871,7 @@ import React from 'react';
   transition: 'all 0.3s ease',
   textTransform: 'uppercase' as const,
   letterSpacing: '1px'
-}}}}>
+}}>
   Get Started
 </button>
 ```
@@ -863,7 +932,7 @@ NO explanations. NO markdown. NO comments about file locations.
         Validates: Requirements 13.3
         """
         relevant_endpoints = []
-        if not backend_spec or not backend_spec.endpoints:
+        if not backend_spec or not hasattr(backend_spec, 'endpoints') or not backend_spec.endpoints:
             return relevant_endpoints
         
         page_name_lower = (page.name or "").lower()
@@ -875,9 +944,9 @@ NO explanations. NO markdown. NO comments about file locations.
                 continue
             
             # Handle both dict and object endpoints
-            if isinstance(endpoint, dict):
-                endpoint_path = endpoint.get('path', '').lower() if endpoint else ''
-                endpoint_desc = endpoint.get('description', '').lower() if endpoint else ''
+            if isinstance(endpoint, dict) and endpoint:
+                endpoint_path = endpoint.get('path', '').lower() if endpoint.get('path') else ''
+                endpoint_desc = endpoint.get('description', '').lower() if endpoint.get('description') else ''
             else:
                 endpoint_path = (getattr(endpoint, 'path', '') or '').lower()
                 endpoint_desc = (getattr(endpoint, 'description', '') or '').lower()
@@ -1173,7 +1242,46 @@ These syntax mistakes cause "SyntaxError: Unexpected token" and break deployment
    ❌ WRONG: style={{{{ color: 'red'  // Missing closing brace
    ✅ CORRECT: style={{{{ color: "red" }}}}  // Complete braces
 
-10. ARRAY SYNTAX:
+10. ARRAY TYPE SYNTAX - CRITICAL FOR TYPESCRIPT:
+    🚨 CRITICAL ERROR: Using 'array' as a type causes "Cannot find name 'array'" build failure
+    
+    ❌ WRONG (causes TS2552 build error):
+    ```typescript
+    interface ContactSectionProps {{
+      hours?: array;  // ❌ 'array' is NOT a valid TypeScript type!
+      socialLinks?: array;  // ❌ BUILD FAILS: Cannot find name 'array'
+    }}
+    // Error: TS2552: Cannot find name 'array'. Did you mean 'Array'?
+    // Result: BUILD FAILS → Deployment BLOCKED
+    ```
+    
+    ✅ CORRECT (valid TypeScript array syntax):
+    ```typescript
+    interface ContactSectionProps {{
+      hours?: string[];  // ✅ Array of strings - CORRECT!
+      socialLinks?: Array<string>;  // ✅ Generic Array type - CORRECT!
+      items?: Array<{{{{ label: string; path: string }}}}>;  // ✅ Array of objects - CORRECT!
+    }}
+    // Result: BUILD SUCCEEDS → Deployment SUCCESS
+    ```
+    
+    CRITICAL RULES FOR ARRAY TYPES:
+    - ❌ NEVER use: propName?: array (invalid - 'array' is not a type)
+    - ❌ NEVER use: propName?: Array (missing type parameter)
+    - ✅ ALWAYS use: propName?: string[] (array syntax - CORRECT)
+    - ✅ OR use: propName?: Array<string> (generic Array syntax - CORRECT)
+    - ✅ For arrays of objects: propName?: Array<{{{{ keyName: typeName }}}}> (CORRECT)
+    - ✅ For arrays of arrays: propName?: string[][] (CORRECT)
+    
+    Common array type examples:
+    - string[] = Array of strings
+    - number[] = Array of numbers
+    - boolean[] = Array of booleans
+    - Array<string> = Generic array of strings (same as string[])
+    - Array<{ id: number; name: string }> = Array of objects
+    - (string | number)[] = Array of strings or numbers (union type)
+    
+11. ARRAY USAGE SYNTAX:
     ❌ WRONG: const arr = [1, 2, 3]  // Missing semicolon (in some contexts)
     ✅ CORRECT: const arr = [1, 2, 3];  // Has semicolon
     ❌ WRONG: items.map(item => <Item />)  // Missing key prop
@@ -1183,6 +1291,7 @@ SYNTAX CHECKLIST BEFORE GENERATING CODE:
 - [ ] All interface properties end with semicolon: prop: type;
 - [ ] All optional properties use ?: prop?: type;
 - [ ] Function types use arrow syntax: () => void (NOT 'function')
+- [ ] Array types use string[] or Array<string> (NOT 'array')
 - [ ] Component destructuring has defaults: ({{ prop = 'default' }})
 - [ ] All JSX tags are properly closed: <Tag /> or <Tag>Content</Tag>
 - [ ] All object literals have proper braces: {{ key: "value" }}
@@ -1190,6 +1299,36 @@ SYNTAX CHECKLIST BEFORE GENERATING CODE:
 - [ ] No missing colons in type annotations: prop: type (NOT prop type)
 - [ ] No missing parentheses in function parameters: (props) => (NOT props =>)
 - [ ] All string literals use consistent quotes: "string" or `template`
+
+🚨 CRITICAL: ARRAY TYPE SYNTAX - THIS BREAKS DEPLOYMENT:
+❌ WRONG (causes TS2552 build error):
+```typescript
+interface ContactSectionProps {{
+  hours?: array;  // ❌ 'array' is NOT a valid TypeScript type!
+  socialLinks?: array;  // ❌ BUILD FAILS: Cannot find name 'array'
+}}
+// Error: TS2552: Cannot find name 'array'. Did you mean 'Array'?
+// Result: BUILD FAILS → Deployment BLOCKED
+```
+
+✅ CORRECT (valid TypeScript array syntax):
+```typescript
+interface ContactSectionProps {{
+  hours?: string[];  // ✅ Array of strings - CORRECT!
+  socialLinks?: Array<string>;  // ✅ Generic Array type - CORRECT!
+  items?: Array<{{ label: string; path: string }}>;  // ✅ Array of objects - CORRECT!
+}}
+// Result: BUILD SUCCEEDS → Deployment SUCCESS
+```
+
+CRITICAL RULES FOR ARRAY TYPES:
+- ❌ NEVER use: propName?: array (invalid - 'array' is not a type, causes TS2552)
+- ❌ NEVER use: propName?: Array (missing type parameter)
+- ✅ ALWAYS use: propName?: string[] (array syntax - CORRECT)
+- ✅ OR use: propName?: Array<string> (generic Array syntax - CORRECT)
+- ✅ For arrays of objects: propName?: Array<{{{{ keyName: typeName }}}}> (CORRECT)
+- ✅ For arrays of arrays: propName?: string[][] (CORRECT)
+- Common types: string[], number[], boolean[], Array<string>, Array<number>
 
 🚨 CRITICAL: FUNCTION TYPE SYNTAX - THIS BREAKS DEPLOYMENT:
 ❌ WRONG (causes SyntaxError during build):
@@ -1651,13 +1790,187 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
                     end_idx = response_text.find("```", start_idx)
                     if end_idx != -1:
                         code = response_text[start_idx:end_idx].strip()
+                        # Auto-correct common errors before validation
+                        code = self._auto_correct_code_errors(code)
                         # Validate the extracted code
                         self._validate_generated_code(code)
                         return code
         
         # If no code blocks found, return the entire response cleaned up
         code = response_text.strip()
+        # Auto-correct common errors before validation
+        code = self._auto_correct_code_errors(code)
         self._validate_generated_code(code)
+        return code
+    
+    def _auto_correct_code_errors(self, code: str) -> str:
+        """
+        Automatically correct common TypeScript errors in generated code
+        
+        Fixes:
+        - array type → string[] (or appropriate type)
+        - function type → () => void (arrow function syntax)
+        - Missing semicolons in interfaces
+        - Other common syntax issues
+        
+        Args:
+            code: Generated code string
+            
+        Returns:
+            Corrected code string
+        """
+        import re
+        
+        # CRITICAL FIX 1: Replace 'function' type with appropriate arrow function syntax
+        # Pattern: propName?: function; or propName?: function (causes SyntaxError)
+        # This fixes: SyntaxError: Unexpected token 'function'
+        
+        # Context-aware replacements - use appropriate signatures based on prop name
+        
+        # Form submission handlers - need data parameter
+        code = re.sub(
+            r'(onSubmit)\s*\?:\s*function\s*;?',
+            r'\1?: (data: any) => void | Promise<void>;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        # Change handlers - need value parameter
+        code = re.sub(
+            r'(onChange|onInput|onSelect)\s*\?:\s*function\s*;?',
+            r'\1?: (value: any) => void;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        # Event handlers - need event parameter
+        code = re.sub(
+            r'(onClick|onMouseEnter|onMouseLeave|onFocus|onBlur|onKeyPress|onKeyDown|onKeyUp)\s*\?:\s*function\s*;?',
+            r'\1?: (event: any) => void;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        # Generic callback handlers that might need parameters - use flexible signature
+        code = re.sub(
+            r'(on[A-Z]\w+|handle[A-Z]\w+|callback)\s*\?:\s*function\s*;?',
+            r'\1?: (...args: any[]) => void;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Remaining function types (non-callback patterns) - simple signature
+        code = re.sub(
+            r'(\w+)\s*\?:\s*function\s*;?',
+            r'\1?: (...args: any[]) => any;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Fix function in non-optional props too
+        code = re.sub(
+            r'(onSubmit)\s*:\s*function\s*;?',
+            r'\1: (data: any) => void | Promise<void>;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        code = re.sub(
+            r'(onChange|onInput|onSelect)\s*:\s*function\s*;?',
+            r'\1: (value: any) => void;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        code = re.sub(
+            r'(onClick|onMouseEnter|onMouseLeave|onFocus|onBlur)\s*:\s*function\s*;?',
+            r'\1: (event: any) => void;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        code = re.sub(
+            r'(\w+)\s*:\s*function\s*;?',
+            r'\1: (...args: any[]) => any;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Also fix Function (capital F) - too generic but valid
+        # Replace with flexible arrow syntax
+        code = re.sub(
+            r'(onSubmit)\s*\?:\s*Function\s*;?',
+            r'\1?: (data: any) => void | Promise<void>;',
+            code,
+            flags=re.MULTILINE | re.IGNORECASE
+        )
+        
+        code = re.sub(
+            r'(on[A-Z]\w+|handle[A-Z]\w+)\s*\?:\s*Function\s*;?',
+            r'\1?: (...args: any[]) => void;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        code = re.sub(
+            r'(\w+)\s*\?:\s*Function\s*;?',
+            r'\1?: (...args: any[]) => any;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        code = re.sub(
+            r'(\w+)\s*:\s*Function\s*;?',
+            r'\1: (...args: any[]) => any;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # CRITICAL FIX 2: Replace 'array' type with 'string[]' (most common case)
+        # Pattern: propName?: array; or propName?: array (with or without semicolon, with or without spaces)
+        # This fixes TS2552: Cannot find name 'array'
+        # More robust pattern that catches all variations
+        code = re.sub(
+            r'(\w+)\s*\?:\s*array\s*;?',
+            r'\1?: string[];',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Fix array in non-optional props too (propName: array)
+        code = re.sub(
+            r'(\w+)\s*:\s*array\s*;?',
+            r'\1: string[];',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Also fix Array without type parameter (less common but possible)
+        # Pattern: propName?: Array; → propName?: Array<string>;
+        code = re.sub(
+            r'(\w+)\s*\?:\s*Array\s*;',
+            r'\1?: Array<string>;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Fix Array in non-optional props
+        code = re.sub(
+            r'(\w+)\s*:\s*Array\s*;',
+            r'\1: Array<string>;',
+            code,
+            flags=re.MULTILINE
+        )
+        
+        # Final check: if any 'array' (case-insensitive) remains as a type, replace it
+        # This is a catch-all for any edge cases
+        code = re.sub(
+            r':\s*array\s*;',
+            ': string[];',
+            code,
+            flags=re.IGNORECASE | re.MULTILINE
+        )
+        
         return code
     
     def _validate_generated_code(self, code: str) -> None:
@@ -1665,6 +1978,7 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         Validate generated code for common errors
         
         Checks for:
+        - Invalid 'array' type usage (TS2552 error)
         - Duplicate component definitions (import + local definition)
         - Missing imports
         - Syntax errors
@@ -1673,6 +1987,19 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
             ValueError: If validation fails
         """
         import re
+        
+        # CRITICAL: Check for 'array' type usage (causes TS2552 build error)
+        # More comprehensive pattern to catch all variations
+        array_type_pattern = r'\w+\s*\??:\s*array\s*;?'
+        array_matches = re.findall(array_type_pattern, code, re.IGNORECASE | re.MULTILINE)
+        if array_matches:
+            # This should have been auto-corrected, but if it wasn't, apply correction now
+            print(f"  ⚠️  Warning: Found 'array' type usage in code. Applying auto-correction...")
+            code = self._auto_correct_code_errors(code)
+            # Re-check after correction
+            array_matches_after = re.findall(array_type_pattern, code, re.IGNORECASE | re.MULTILINE)
+            if array_matches_after:
+                print(f"  ⚠️  Warning: Some 'array' types may still remain. Please review the code.")
         
         # Check for duplicate component definitions
         # Pattern: import ComponentName from '...' followed by const ComponentName = ...

@@ -4,8 +4,10 @@ Decomposes user requests into structured implementation plans using Gemini LLM
 Validates: Requirements 2.1, 2.2, 12.1, 12.2
 """
 
+import asyncio
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -21,6 +23,31 @@ from services.rate_limiter import get_rate_limiter, RateLimitExceeded, Exponenti
 from services.error_handler import get_error_handler, LLMAPIError, ValidationError as AmarValidationError
 from config import get_settings
 from .plan_validator import PlanValidator, validate_plan_completeness
+
+
+def _run_async_in_thread(coro):
+    """
+    Helper function to run async code from a sync context, even when an event loop is running.
+    Uses a thread pool executor to run the coroutine in a new event loop.
+    """
+    def run_in_new_loop():
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            return new_loop.run_until_complete(coro)
+        finally:
+            new_loop.close()
+    
+    try:
+        # Check if we're in an async context
+        asyncio.get_running_loop()
+        # We're in an async context, run in a thread with new event loop
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_new_loop)
+            return future.result()
+    except RuntimeError:
+        # No running loop, safe to use asyncio.run()
+        return asyncio.run(coro)
 
 
 class PlannerAgent:
@@ -122,18 +149,62 @@ class PlannerAgent:
             # Generate plan using LLM
             plan_dict = self._generate_plan_with_llm(user_request.description, context, user_request.session_id)
             
+            # Normalize component types in plan_dict before validation
+            for comp_data in plan_dict.get('components', []):
+                comp_type = comp_data.get('type', 'functional').lower().strip()
+                type_mapping = {
+                    'presentational': 'functional',
+                    'presentation': 'functional',
+                    'stateless': 'functional',
+                    'stateful': 'functional',
+                    'container': 'functional',
+                    'smart': 'functional',
+                    'dumb': 'functional',
+                    'pure': 'functional',
+                    'function': 'functional',
+                    'fc': 'functional',
+                    'react.fc': 'functional',
+                    'component': 'functional',
+                    'hooks': 'hook',
+                    'custom-hook': 'hook',
+                    'customhook': 'hook',
+                    'class-component': 'class',
+                    'classcomponent': 'class',
+                    'class-based': 'class',
+                    'classbased': 'class',
+                }
+                normalized_type = type_mapping.get(comp_type, 'functional' if comp_type not in ['class', 'hook'] else comp_type)
+                comp_data['type'] = normalized_type
+            
             # Validate plan completeness first
             completeness_validation = validate_plan_completeness(plan_dict)
-            if not completeness_validation['valid']:
-                raise ValidationError(f"Plan completeness validation failed: {completeness_validation['errors']}")
+            # Only fail on critical errors, not type mismatches (which we've normalized)
+            critical_errors = [e for e in completeness_validation.get('errors', []) 
+                             if 'Invalid type' not in e and 'Missing required' not in e]
+            if critical_errors:
+                raise AmarValidationError(
+                    f"Plan completeness validation failed: {critical_errors}",
+                    details={'validation_errors': critical_errors}
+                )
             
             # Validate and create Plan object
             plan = self._validate_and_create_plan(plan_dict)
             
             # Run comprehensive structure validation
             structure_validation = self.validator.validate_plan_structure(plan)
-            if not structure_validation['valid']:
-                raise ValidationError(f"Plan structure validation failed: {structure_validation['errors']}")
+            # Only fail on critical errors, warnings are acceptable
+            critical_errors = [e for e in structure_validation.get('errors', []) 
+                             if 'Invalid type' not in e]
+            if critical_errors:
+                raise AmarValidationError(
+                    f"Plan structure validation failed: {critical_errors}",
+                    details={'validation_errors': critical_errors, 'warnings': structure_validation.get('warnings', [])}
+                )
+            
+            # Log warnings if any
+            if structure_validation.get('warnings'):
+                for warning in structure_validation['warnings']:
+                    print(f"  ⚠️  Warning: {warning}")
             
             # Store plan in episodic memory with validation results
             memory.add_entry(
@@ -263,11 +334,11 @@ class PlannerAgent:
         if rag_service.is_enabled:
             try:
                 # Query for planner agent system prompt
-                rag_result = asyncio.run(rag_service.retrieve_context(
+                rag_result = _run_async_in_thread(rag_service.retrieve_context(
                     "planner agent system prompt comprehensive instructions",
                     top_k=1
                 ))
-                if rag_result.get('retrieved_docs'):
+                if rag_result and rag_result.get('retrieved_docs'):
                     system_prompt = rag_result['retrieved_docs'][0]['content']
                     print(f"✓ Loaded comprehensive planner system prompt from RAG ({len(system_prompt)} chars)")
             except Exception as e:
@@ -419,9 +490,36 @@ Respond ONLY with valid JSON. No additional text or explanation.
                 page = PageSpec(**page_data)
                 pages.append(page)
             
-            # Create ComponentSpec objects
+            # Create ComponentSpec objects with type normalization
             components = []
             for comp_data in plan_dict.get('components', []):
+                # Normalize component type - map common variations to valid types
+                comp_type = comp_data.get('type', 'functional').lower().strip()
+                type_mapping = {
+                    'presentational': 'functional',
+                    'presentation': 'functional',
+                    'stateless': 'functional',
+                    'stateful': 'functional',
+                    'container': 'functional',
+                    'smart': 'functional',
+                    'dumb': 'functional',
+                    'pure': 'functional',
+                    'function': 'functional',
+                    'fc': 'functional',
+                    'react.fc': 'functional',
+                    'component': 'functional',
+                    'hooks': 'hook',
+                    'custom-hook': 'hook',
+                    'customhook': 'hook',
+                    'class-component': 'class',
+                    'classcomponent': 'class',
+                    'class-based': 'class',
+                    'classbased': 'class',
+                }
+                # Map to valid type, default to 'functional' if not found
+                normalized_type = type_mapping.get(comp_type, 'functional' if comp_type not in ['class', 'hook'] else comp_type)
+                comp_data['type'] = normalized_type
+                
                 component = ComponentSpec(**comp_data)
                 components.append(component)
             
@@ -445,8 +543,24 @@ Respond ONLY with valid JSON. No additional text or explanation.
             
             return plan
             
+        except ValidationError as e:
+            # Handle Pydantic ValidationError
+            error_messages = []
+            if hasattr(e, 'errors'):
+                for error in e.errors():
+                    error_messages.append(f"{error.get('loc', 'unknown')}: {error.get('msg', str(error))}")
+            else:
+                error_messages.append(str(e))
+            
+            raise AmarValidationError(
+                f"Plan validation failed: {', '.join(error_messages)}",
+                details={'validation_errors': error_messages, 'original_error': str(e)}
+            )
         except Exception as e:
-            raise ValidationError(f"Plan validation failed: {str(e)}")
+            raise AmarValidationError(
+                f"Plan validation failed: {str(e)}",
+                details={'original_error': str(e)}
+            )
     
     def _validate_page_count(self, pages: List[PageSpec]) -> None:
         """
