@@ -60,21 +60,25 @@ AMAR/
 ## 🎯 Main Entry Points
 
 ### For Phase 2 AI Agent Integration
+
 ```bash
 python export_for_phase2.py "Your build request" all
 ```
 
 ### For Interactive Exploration
+
 ```bash
 python dynamic_knowledge_base.py
 ```
 
 ### For Demo
+
 ```bash
 python demo_phase2_workflow.py
 ```
 
 ### For Initial Setup
+
 ```bash
 python ingest_knowledge_base.py
 ```
@@ -82,29 +86,34 @@ python ingest_knowledge_base.py
 ## 📚 Documentation Guide
 
 ### Getting Started
+
 1. **README.md** - Start here for overview
 2. **docs/00_START_HERE.md** - Quick start
 3. **docs/BEGINNER.md** - Complete beginner's guide
 4. **docs/QUICKSTART.md** - Detailed setup
 
 ### Phase 2 Integration
+
 1. **docs/PHASE2_QUICK_START.md** - Get started in 3 steps
 2. **docs/PHASE2_INTEGRATION_GUIDE.md** - Complete guide
 3. **docs/PHASE2_CHEAT_SHEET.md** - Quick reference
 4. **docs/FINAL_PHASE2_SUMMARY.md** - Full summary
 
 ### Technical Details
+
 - **docs/ARCHITECTURE.md** - System architecture
 - **docs/KNOWLEDGE_BASE_GUIDE.md** - KB usage
 - **docs/CONFIDENCE_FIX_SUMMARY.md** - Confidence details
 
 ### Reference
+
 - **docs/TROUBLESHOOTING.md** - Common issues
 - **docs/INDEX.md** - Documentation index
 
 ## 🔧 Core Components
 
 ### RAG Pipeline (`rag_retriever.py`)
+
 - Document chunking and embedding
 - FAISS HNSW indexing
 - Cross-encoder reranking
@@ -112,17 +121,20 @@ python ingest_knowledge_base.py
 - Confidence calculation
 
 ### Dynamic Knowledge Base (`dynamic_knowledge_base.py`)
+
 - Interactive query system
 - Web search integration
 - Automatic knowledge expansion
 - Knowledge base management
 
 ### Phase 2 Formatter (`phase2_formatter.py`)
+
 - Structured output formatting
 - JSON, Markdown, Prompt exports
 - Section parsing and organization
 
 ### Export Tool (`export_for_phase2.py`)
+
 - Command-line export interface
 - Multiple format generation
 - File management
@@ -157,6 +169,7 @@ Phase 2 AI Agent
 ## 📦 Dependencies
 
 See `requirements.txt` for full list:
+
 - faiss-cpu
 - sentence-transformers
 - google-generativeai
@@ -165,7 +178,7 @@ See `requirements.txt` for full list:
 - numpy
 - tiktoken
 
-## 🚀 Quick Commands
+## Quick Commands
 
 ```bash
 # Setup

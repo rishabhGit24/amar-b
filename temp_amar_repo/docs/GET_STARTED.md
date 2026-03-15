@@ -1,4 +1,4 @@
-# 🚀 AMAR Phase 1 - Get Started in 5 Minutes
+# AMAR Phase 1 - Get Started in 5 Minutes
 
 ## What is AMAR?
 
@@ -53,11 +53,12 @@ python demo.py
 ## What You'll See
 
 ### Sample Query 1: SQL Injection Prevention
+
 ```
 Query: How to prevent SQL injection in Node.js?
 
-Answer: Always use parameterized queries instead of string 
-concatenation. Use placeholders (?) and pass user input as 
+Answer: Always use parameterized queries instead of string
+concatenation. Use placeholders (?) and pass user input as
 parameters to prevent SQL injection attacks...
 
 Confidence: 92%
@@ -65,6 +66,7 @@ Sources: security_best_practices.txt
 ```
 
 ### Sample Query 2: Microservices Migration
+
 ```
 Query: How to migrate a monolith to microservices?
 
@@ -77,6 +79,7 @@ Sources: microservices_guide.txt
 ```
 
 ### MVP Example: SQL Injection Fix
+
 ```
 ✓ Vulnerability Analysis
 ✓ Code Diff/Patch
@@ -98,6 +101,7 @@ Sources: microservices_guide.txt
 ## What Can AMAR Do?
 
 ### 1. Answer Technical Questions
+
 ```python
 rag.query("What are best practices for API security?")
 rag.query("How to implement JWT authentication?")
@@ -105,6 +109,7 @@ rag.query("Explain microservices patterns")
 ```
 
 ### 2. Analyze Code for Security Issues
+
 ```python
 rag.query("How to fix SQL injection in this code?")
 rag.query("What are XSS prevention techniques?")
@@ -112,6 +117,7 @@ rag.query("How to secure API endpoints?")
 ```
 
 ### 3. Generate Migration Plans
+
 ```python
 rag.query("How to migrate from Express to FastAPI?")
 rag.query("Steps to modernize legacy web app?")
@@ -119,6 +125,7 @@ rag.query("Convert monolith to microservices?")
 ```
 
 ### 4. Provide Code Examples
+
 ```python
 rag.query("Show me parameterized query example in Node.js")
 rag.query("How to implement rate limiting?")
@@ -134,7 +141,7 @@ amar-phase1/
 │   ├── README.md
 │   └── QUICKSTART.md
 │
-├── 🚀 Run These
+├──  Run These
 │   ├── demo.py (complete demo)
 │   ├── mvp_example.py (SQL injection fix)
 │   └── test_pipeline.py (verify setup)
@@ -154,6 +161,7 @@ amar-phase1/
 ## 5-Minute Tutorial
 
 ### Step 1: Initialize (30 seconds)
+
 ```python
 from rag_retriever import RAGPipeline
 
@@ -162,6 +170,7 @@ print("✓ Pipeline initialized")
 ```
 
 ### Step 2: Add Documents (1 minute)
+
 ```python
 from ingestion_pipeline import IngestionPipeline
 
@@ -171,6 +180,7 @@ print(f"✓ Indexed {len(rag.retriever.chunks)} chunks")
 ```
 
 ### Step 3: Ask Questions (30 seconds each)
+
 ```python
 # Question 1
 result = rag.query("How to prevent SQL injection?")
@@ -183,12 +193,14 @@ print(result['answer'])
 ```
 
 ### Step 4: Save for Later (30 seconds)
+
 ```python
 rag.save("my_pipeline.pkl")
 print("✓ Pipeline saved")
 ```
 
 ### Step 5: Load and Use (30 seconds)
+
 ```python
 rag_loaded = RAGPipeline(llm_type="gemini")
 rag_loaded.load("my_pipeline.pkl")
@@ -198,6 +210,7 @@ result = rag_loaded.query("Your question here")
 ## Common Use Cases
 
 ### Use Case 1: Security Audit
+
 ```python
 # Add your codebase documentation
 ingestion.ingest_directory("./docs", pattern="*.md")
@@ -209,6 +222,7 @@ rag.query("Are there any XSS risks?")
 ```
 
 ### Use Case 2: Migration Planning
+
 ```python
 # Add legacy system docs
 ingestion.ingest_file("legacy_system_docs.pdf")
@@ -220,6 +234,7 @@ rag.query("How to handle session management in new stack?")
 ```
 
 ### Use Case 3: Learning & Documentation
+
 ```python
 # Add learning materials
 ingestion.ingest_directory("./tutorials", pattern="*.txt")
@@ -233,12 +248,14 @@ rag.query("How to implement OAuth2?")
 ## Troubleshooting
 
 ### Problem: Import Error
+
 ```bash
 # Solution
 pip install --upgrade -r requirements.txt
 ```
 
 ### Problem: API Key Not Working
+
 ```python
 # Solution
 import os
@@ -249,6 +266,7 @@ os.environ['GEMINI_API_KEY'] = 'your-key-here'
 ```
 
 ### Problem: Slow Performance
+
 ```python
 # Solution: Use smaller top-K
 from config import TOP_K_RESULTS
@@ -256,6 +274,7 @@ from config import TOP_K_RESULTS
 ```
 
 ### Problem: Low Relevance
+
 ```python
 # Solution: Add more domain-specific documents
 ingestion.ingest_directory("./your_docs")
@@ -264,12 +283,14 @@ ingestion.ingest_directory("./your_docs")
 ## Next Steps
 
 ### Immediate (Today)
+
 1. ✅ Run demo.py
 2. ✅ Try mvp_example.py
 3. ✅ Test with your own questions
 4. ✅ Add your own documents
 
 ### This Week
+
 1. Read ARCHITECTURE.md
 2. Customize config.py
 3. Add more documents
@@ -277,6 +298,7 @@ ingestion.ingest_directory("./your_docs")
 5. Share with Rishab for Langchain integration
 
 ### This Month
+
 1. Integrate with Langchain
 2. Build multi-agent system
 3. Deploy as API
@@ -284,27 +306,30 @@ ingestion.ingest_directory("./your_docs")
 
 ## Performance Metrics
 
-| Metric | Target | Achieved |
-|--------|--------|----------|
-| Relevance | 80% | 85% ✓ |
-| Query Speed | <3s | 2.5s ✓ |
-| Indexing | >500/s | 1000/s ✓ |
-| Memory | <1GB | 500MB ✓ |
+| Metric      | Target | Achieved |
+| ----------- | ------ | -------- |
+| Relevance   | 80%    | 85% ✓    |
+| Query Speed | <3s    | 2.5s ✓   |
+| Indexing    | >500/s | 1000/s ✓ |
+| Memory      | <1GB   | 500MB ✓  |
 
 ## Support & Resources
 
 ### Documentation
+
 - 📖 [Quick Start](QUICKSTART.md) - Detailed setup guide
 - 🏗️ [Architecture](ARCHITECTURE.md) - How it works
 - 🔗 [Langchain Integration](LANGCHAIN_INTEGRATION.md) - For Rishab
 - 📋 [Project Summary](PROJECT_SUMMARY.md) - Complete overview
 
 ### Code Examples
+
 - 🎯 [Demo Script](demo.py) - Full demonstration
 - 💉 [MVP Example](mvp_example.py) - SQL injection fix
 - 🧪 [Tests](test_pipeline.py) - Component verification
 
 ### Get Help
+
 1. Check documentation files
 2. Run test_pipeline.py for diagnostics
 3. Review sample outputs
@@ -317,26 +342,29 @@ ingestion.ingest_directory("./your_docs")
 - 🧪 **6 test suites** for quality assurance
 - 🎯 **85% accuracy** on web dev queries
 - ⚡ **<50ms** retrieval speed
-- 🚀 **Ready for production** deployment
+- **Ready for production** deployment
 
 ## What's Next? Phase 2 Preview
 
 Phase 2 will add:
+
 - 🔄 **Migration Analysis** - Analyze legacy codebases
 - 🔨 **Code Transformation** - Auto-convert frameworks
 - 📊 **Stack Comparison** - Compare tech stacks
-- 🚀 **Deployment Automation** - One-click deploys
+- **Deployment Automation** - One-click deploys
 - 🤖 **Multi-Agent System** - Coordinated AI agents
 
 ## Ready to Start?
 
 ### Fastest Way (Colab)
+
 1. Open https://colab.research.google.com
 2. Copy cells from AMAR_Colab_Notebook.md
 3. Get API key from https://makersuite.google.com/app/apikey
 4. Run and see results in 3 minutes!
 
 ### Local Development
+
 ```bash
 git clone <repo>
 cd amar-phase1

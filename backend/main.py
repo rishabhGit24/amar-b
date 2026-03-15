@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import os
 import logging
+import warnings
 from typing import Optional, Dict, Any
 import uuid
 import json
@@ -30,6 +31,11 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 logging.getLogger("google").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    module=r"google\.api_core\._python_version_support"
+)
 
 from models import UserRequest
 from services.rag_service import get_rag_service
@@ -603,7 +609,7 @@ async def send_progress_update(
         "planner": "📋",
         "builder": "🔨",
         "tester": "🧪",
-        "deployer": "🚀",
+        "deployer": "",
         "finalize": "✅",
         "system": "⚠️"
     }

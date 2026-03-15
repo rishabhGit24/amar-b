@@ -21,7 +21,7 @@ from models.workflow import (
 from models.core import UserRequest, Plan
 from agents.planner import PlannerAgent
 from agents.builder import BuilderAgent
-from agents.deployer import DeployerAgent
+from agents.deployer_api import DeployerAgentAPI
 from services.memory import memory_manager
 from services.audit import audit_manager
 
@@ -41,7 +41,8 @@ class WorkflowOrchestrator:
         # Initialize agents
         self.planner = PlannerAgent()
         self.builder = BuilderAgent()
-        self.deployer = DeployerAgent()
+        # Use API-based deployer to avoid npm/CLI dependency at runtime.
+        self.deployer = DeployerAgentAPI()
         
         # Build workflow graph
         self.workflow = self._build_workflow_graph()
@@ -201,6 +202,13 @@ class WorkflowOrchestrator:
                     'planner',
                     {
                         'plan': plan_dict,
+                        'agent_context': {
+                            **state.get('agent_context', {}),
+                            'planner_llm': {
+                                'generation_mode': response.output.get('llm_generation_mode'),
+                                'model_used': response.output.get('llm_model_used')
+                            }
+                        },
                         'current_agent': 'planner'
                     }
                 )
@@ -277,7 +285,8 @@ class WorkflowOrchestrator:
                         'agent_context': {
                             **state.get('agent_context', {}),
                             'project_dir': project_dir,
-                            'project': project_dict
+                            'project': project_dict,
+                            'builder_llm': response.output.get('llm_stats', {})
                         },
                         'current_agent': 'builder'
                     }
@@ -541,14 +550,11 @@ class WorkflowOrchestrator:
             execution_time_ms = int((datetime.now() - started_at).total_seconds() * 1000)
             
             # Determine final status
-            # Workflow is successful if we have deployment URL OR project location
-            # (deployment can be skipped but project generation is still successful)
-            if state.get('deployment_url') or state.get('project_location'):
+            # AMAR requirement: workflow is successful only when a deployment URL is returned.
+            if state.get('deployment_url'):
                 final_status = 'completed'
-            elif state.get('errors'):
-                final_status = 'failed'
             else:
-                final_status = 'completed'
+                final_status = 'failed'
             
             # Finalize state
             state = finalize_workflow_state(state, final_status, execution_time_ms)
@@ -561,23 +567,37 @@ class WorkflowOrchestrator:
             final_message = f"Workflow {final_status}\n"
             final_message += f"Total execution time: {execution_time_ms}ms\n"
             final_message += f"\n📁 Generated Files Location:\n{project_location}\n"
+            planner_llm = state.get('agent_context', {}).get('planner_llm', {})
+            builder_llm = state.get('agent_context', {}).get('builder_llm', {})
+            if planner_llm or builder_llm:
+                final_message += "\nLLM Usage Diagnostics:\n"
+                if planner_llm:
+                    final_message += (
+                        f"- Planner: mode={planner_llm.get('generation_mode')} "
+                        f"model={planner_llm.get('model_used')}\n"
+                    )
+                if builder_llm:
+                    final_message += (
+                        f"- Builder: attempted={builder_llm.get('attempted')} "
+                        f"succeeded={builder_llm.get('succeeded')} "
+                        f"fallback_templates={builder_llm.get('template_fallback_count')} "
+                        f"model={builder_llm.get('last_model_used')}\n"
+                    )
             
             if deployment_url:
                 final_message += f"\n🌐 Deployment URL:\n{deployment_url}"
             elif manual_deployment_required:
-                final_message += f"\n⚠️ Manual deployment required (npm not available)"
-                final_message += f"\nSee deployment instructions above for how to deploy your project."
+                final_message += f"\n❌ Deployment failed (manual deployment mode was returned)."
+                final_message += f"\nA public URL was not produced."
             else:
-                final_message += f"\n⚠️ Automatic deployment was not available"
-                final_message += f"\nYou can manually deploy the files from the project directory."
+                final_message += f"\n❌ Deployment failed."
+                final_message += f"\nA public URL was not produced."
             
             # Send progress update with appropriate title
             if deployment_url:
                 title = "Application deployed successfully!"
-            elif manual_deployment_required:
-                title = "Project ready for manual deployment"
             else:
-                title = f"Workflow {final_status}"
+                title = "Workflow failed"
             
             await self._send_progress(
                 "finalize",

@@ -77,7 +77,7 @@ Build a landing page about AI, keep it simple with just 1 page
 You should see:
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 📤 Uploading files to Vercel...
 ⏳ Monitoring deployment status...
 ✓ Deployment ready!
@@ -158,7 +158,7 @@ See `REVERT_TO_CLI_DEPLOYMENT.md` for details.
 
 ---
 
-## 🚀 Ready?
+## Ready?
 
 1. Get token: https://vercel.com/account/tokens
 2. Add to `backend/.env`: `VERCEL_TOKEN=your_token`

@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 interface FeatureItem {
   icon: string;
@@ -12,22 +12,25 @@ interface FeaturesProps {
 }
 
 const Features: React.FC<FeaturesProps> = ({
-  title = 'Key Features of Our AI',
+  title = "Key Features of Our AI",
   featureItems = [
     {
-      icon: '💡',
-      title: 'Intelligent Automation',
-      description: 'Streamline your workflows with our AI-powered automation solutions.',
+      icon: "💡",
+      title: "Intelligent Automation",
+      description:
+        "Streamline your workflows with our AI-powered automation solutions.",
     },
     {
-      icon: '📊',
-      title: 'Data-Driven Insights',
-      description: 'Uncover valuable patterns and make informed decisions with advanced analytics.',
+      icon: "📊",
+      title: "Data-Driven Insights",
+      description:
+        "Uncover valuable patterns and make informed decisions with advanced analytics.",
     },
     {
-      icon: '🚀',
-      title: 'Enhanced User Experience',
-      description: 'Deliver personalized and engaging experiences to your users.',
+      icon: "",
+      title: "Enhanced User Experience",
+      description:
+        "Deliver personalized and engaging experiences to your users.",
     },
   ],
 }) => {

@@ -39,7 +39,7 @@ your-project-root/
         └── ...
 ```
 
-## 🚀 What You Can Do With These Files
+## What You Can Do With These Files
 
 ### 1. Manual Deployment
 
@@ -159,7 +159,7 @@ After generation, you'll see:
 📁 Files saved to: R:\StartUp\New folder (2)\generated_projects\amar_project_20251208_210530
    You can find your generated project at this location!
 
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 ✓ DEPLOYER: Application deployed successfully
 🌐 Deployment URL: https://amar-app-abc123.vercel.app
 📁 Project Files: R:\StartUp\New folder (2)\generated_projects\amar_project_20251208_210530

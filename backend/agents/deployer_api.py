@@ -1,4 +1,4 @@
-"""
+﻿"""
 API-Based Deployer Agent for AMAR MVP
 Deploys generated React applications using Vercel/Netlify REST APIs (no CLI needed)
 Validates: Requirements 6.1, 6.3, 6.4, 6.5
@@ -45,6 +45,8 @@ class DeployerAgentAPI:
         # Platform availability (only requires API tokens)
         self.vercel_available = bool(self.settings.vercel_token)
         self.netlify_available = bool(self.settings.netlify_token)
+        # AMAR requirement: prefer/require Vercel URL output
+        self.vercel_only = True
         
         # API endpoints
         self.vercel_api_base = "https://api.vercel.com"
@@ -87,7 +89,7 @@ class DeployerAgentAPI:
                     platform = 'vercel'
                     self.attempted_platforms.append(platform)
                     
-                    self.logger.info(f"🚀 Attempting Vercel deployment via API...")
+                    self.logger.info(f" Attempting Vercel deployment via API...")
                     
                     memory.add_entry(
                         agent='deployer',
@@ -103,7 +105,7 @@ class DeployerAgentAPI:
                         project.files
                     )
                     
-                    self.logger.info(f"✓ Vercel deployment successful: {deployment_url}")
+                    self.logger.info(f"âœ“ Vercel deployment successful: {deployment_url}")
                     
                 except DeploymentError as e:
                     self.platform_errors['vercel'] = str(e)
@@ -117,13 +119,13 @@ class DeployerAgentAPI:
                         importance=0.7
                     )
             
-            # Try Netlify if Vercel failed or wasn't available
-            if not deployment_url and self.netlify_available:
+            # Optional Netlify fallback (disabled by default to enforce Vercel URLs)
+            if (not self.vercel_only) and (not deployment_url) and self.netlify_available:
                 try:
                     platform = 'netlify'
                     self.attempted_platforms.append(platform)
                     
-                    self.logger.info(f"🚀 Attempting Netlify deployment via API...")
+                    self.logger.info(f" Attempting Netlify deployment via API...")
                     
                     memory.add_entry(
                         agent='deployer',
@@ -139,7 +141,7 @@ class DeployerAgentAPI:
                         project.files
                     )
                     
-                    self.logger.info(f"✓ Netlify deployment successful: {deployment_url}")
+                    self.logger.info(f"âœ“ Netlify deployment successful: {deployment_url}")
                     
                 except DeploymentError as e:
                     self.platform_errors['netlify'] = str(e)
@@ -164,6 +166,7 @@ class DeployerAgentAPI:
                         'platform_errors': self.platform_errors,
                         'vercel_token_set': self.vercel_available,
                         'netlify_token_set': self.netlify_available,
+                        'vercel_only': self.vercel_only,
                         'deployment_method': 'REST API (no CLI required)'
                     },
                     recoverable=False
@@ -231,12 +234,12 @@ class DeployerAgentAPI:
         """
         try:
             # Prepare files for deployment
-            file_dict = self._prepare_vercel_files(project_dir, files)
+            file_list = self._prepare_vercel_files(project_dir, files)
             
             # Create deployment payload using Vercel v13 API format
             payload = {
                 "name": f"amar-app-{session_id[:8]}",
-                "files": file_dict,
+                "files": file_list,
                 "projectSettings": {
                     "framework": "create-react-app",
                     "buildCommand": "npm run build",
@@ -250,7 +253,7 @@ class DeployerAgentAPI:
                 "Content-Type": "application/json"
             }
             
-            self.logger.info(f"📤 Uploading {len(file_dict)} files to Vercel...")
+            self.logger.info(f"Uploading {len(file_list)} files to Vercel...")
             
             response = requests.post(
                 f"{self.vercel_api_base}/v13/deployments",
@@ -268,15 +271,44 @@ class DeployerAgentAPI:
                 )
             
             deployment_data = response.json()
-            deployment_url = f"https://{deployment_data.get('url', deployment_data.get('alias', [''])[0])}"
+            url_host = deployment_data.get('url')
+            if not url_host:
+                alias = deployment_data.get('alias', [])
+                if isinstance(alias, list) and alias:
+                    url_host = alias[0]
+                elif isinstance(alias, str) and alias:
+                    url_host = alias
+            if not url_host:
+                raise DeploymentError(
+                    "Vercel API response did not contain a deployment URL.",
+                    details={'response': deployment_data},
+                    recoverable=True
+                )
+            deployment_url = f"https://{url_host}"
             
             # Monitor deployment status
             deployment_id = deployment_data.get('id')
             if deployment_id:
-                self.logger.info(f"⏳ Monitoring deployment status...")
+                self.logger.info("Monitoring deployment status...")
                 status = self._monitor_vercel_deployment_api(deployment_id, session_id)
             else:
                 status = 'deployed'
+
+            # A URL alone is not enough: deployment must be READY on Vercel.
+            if status != 'ready':
+                error_detail = deployment_data.get('error', {}) if isinstance(deployment_data, dict) else {}
+                inspector_url = deployment_data.get('inspectorUrl') if isinstance(deployment_data, dict) else None
+                raise DeploymentError(
+                    f"Vercel deployment did not reach ready state (status={status}).",
+                    details={
+                        'status': status,
+                        'deployment_id': deployment_id,
+                        'deployment_url': deployment_url,
+                        'inspector_url': inspector_url,
+                        'vercel_error': error_detail
+                    },
+                    recoverable=True
+                )
             
             deployment_details = {
                 'platform': 'vercel',
@@ -321,7 +353,7 @@ class DeployerAgentAPI:
                 "custom_domain": None
             }
             
-            self.logger.info(f"📤 Creating Netlify site...")
+            self.logger.info(f"ðŸ“¤ Creating Netlify site...")
             
             site_response = requests.post(
                 f"{self.netlify_api_base}/sites",
@@ -342,7 +374,7 @@ class DeployerAgentAPI:
             site_id = site_data.get('id')
             
             # Deploy the zip file
-            self.logger.info(f"📤 Uploading project files to Netlify...")
+            self.logger.info(f"ðŸ“¤ Uploading project files to Netlify...")
             
             deploy_headers = {
                 "Authorization": f"Bearer {self.settings.netlify_token}",
@@ -370,7 +402,7 @@ class DeployerAgentAPI:
             # Monitor deployment
             deploy_id = deploy_data.get('id')
             if deploy_id:
-                self.logger.info(f"⏳ Monitoring deployment status...")
+                self.logger.info(f"â³ Monitoring deployment status...")
                 status = self._monitor_netlify_deployment_api(site_id, deploy_id, session_id)
             else:
                 status = 'deployed'
@@ -393,13 +425,13 @@ class DeployerAgentAPI:
                 recoverable=True
             )
     
-    def _prepare_vercel_files(self, project_dir: str, files: Dict[str, str]) -> Dict[str, Dict[str, str]]:
+    def _prepare_vercel_files(self, project_dir: str, files: Dict[str, str]) -> List[Dict[str, str]]:
         """
         Prepare files in Vercel API format
-        
-        Vercel v13 API expects: {"path/to/file": {"file": "content"}}
+
+        Vercel v13 API expects: [{"file": "path/to/file", "data": "content"}]
         """
-        file_dict = {}
+        file_list: List[Dict[str, str]] = []
         
         # Files to skip (Vercel auto-generates these)
         skip_files = ['vercel.json', 'netlify.toml']
@@ -410,12 +442,13 @@ class DeployerAgentAPI:
                 self.logger.info(f"Skipping {file_path} (not needed for API deployment)")
                 continue
             
-            # Vercel v13 API format: plain text content, not base64
-            file_dict[file_path] = {
-                "file": content
-            }
-        
-        return file_dict
+            # Vercel v13 API format for source deployments
+            file_list.append({
+                "file": file_path,
+                "data": content
+            })
+
+        return file_list
     
     def _create_netlify_zip(self, project_dir: str, files: Dict[str, str]) -> io.BytesIO:
         """
@@ -453,14 +486,14 @@ class DeployerAgentAPI:
                     state = data.get('readyState', data.get('state', 'UNKNOWN'))
                     
                     if state in ['READY', 'DEPLOYED']:
-                        self.logger.info(f"✓ Deployment ready!")
+                        self.logger.info("Deployment ready!")
                         return 'ready'
                     elif state in ['ERROR', 'FAILED']:
-                        self.logger.error(f"✗ Deployment failed")
+                        self.logger.error("Deployment failed")
                         return 'error'
                     
                     # Still building
-                    self.logger.info(f"⏳ Building... (attempt {attempt + 1}/{max_attempts})")
+                    self.logger.info(f"Building... (attempt {attempt + 1}/{max_attempts})")
                 
             except requests.RequestException:
                 pass
@@ -492,14 +525,14 @@ class DeployerAgentAPI:
                     state = data.get('state', 'unknown')
                     
                     if state == 'ready':
-                        self.logger.info(f"✓ Deployment ready!")
+                        self.logger.info(f"âœ“ Deployment ready!")
                         return 'ready'
                     elif state in ['error', 'failed']:
-                        self.logger.error(f"✗ Deployment failed")
+                        self.logger.error(f"âœ— Deployment failed")
                         return 'error'
                     
                     # Still building
-                    self.logger.info(f"⏳ Building... (attempt {attempt + 1}/{max_attempts})")
+                    self.logger.info(f"â³ Building... (attempt {attempt + 1}/{max_attempts})")
                 
             except requests.RequestException:
                 pass
@@ -510,9 +543,18 @@ class DeployerAgentAPI:
     
     def _generate_deployment_error_message(self) -> str:
         """Generate helpful error message for deployment failures"""
+        if self.vercel_only and not self.vercel_available:
+            return (
+                "No Vercel deployment token configured.\n\n"
+                "Set VERCEL_TOKEN in your .env file:\n"
+                "- VERCEL_TOKEN=your_vercel_token_here\n\n"
+                "Get your token at:\n"
+                "- https://vercel.com/account/tokens"
+            )
+
         if not self.vercel_available and not self.netlify_available:
             return (
-                "❌ No deployment platform configured.\n\n"
+                "No deployment platform configured.\n\n"
                 "Please set at least one API token in your .env file:\n"
                 "- VERCEL_TOKEN=your_vercel_token_here\n"
                 "- NETLIFY_TOKEN=your_netlify_token_here\n\n"
@@ -520,16 +562,15 @@ class DeployerAgentAPI:
                 "- Vercel: https://vercel.com/account/tokens\n"
                 "- Netlify: https://app.netlify.com/user/applications#personal-access-tokens"
             )
-        else:
-            error_details = "\n".join([
-                f"- {platform}: {error}" 
-                for platform, error in self.platform_errors.items()
-            ])
-            return (
-                f"❌ Deployment failed on all attempted platforms:\n\n{error_details}\n\n"
-                "Please check your API tokens and try again."
-            )
-    
+
+        error_details = "\n".join([
+            f"- {platform}: {error}"
+            for platform, error in self.platform_errors.items()
+        ])
+        return (
+            f"Deployment failed on all attempted platforms:\n\n{error_details}\n\n"
+            "Please check your API tokens and try again."
+        )
     def _create_error_response(self, error_msg: str, start_time: datetime) -> AgentResponse:
         """Create standardized error response"""
         execution_time = int((datetime.now() - start_time).total_seconds() * 1000)

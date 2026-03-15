@@ -1,4 +1,4 @@
-"""
+﻿"""
 Planner Agent for AMAR MVP
 Decomposes user requests into structured implementation plans using Gemini LLM
 Validates: Requirements 2.1, 2.2, 12.1, 12.2
@@ -21,6 +21,12 @@ from models.core import (
 from services.memory import memory_manager
 from services.rate_limiter import get_rate_limiter, RateLimitExceeded, ExponentialBackoff
 from services.error_handler import get_error_handler, LLMAPIError, ValidationError as AmarValidationError
+from services.gemini_model_utils import (
+    build_gemini_model_candidates,
+    normalize_gemini_model_name,
+    should_fallback_to_next_model,
+)
+from services.system_prompt_loader import load_system_prompt
 from config import get_settings
 from .plan_validator import PlanValidator, validate_plan_completeness
 
@@ -71,6 +77,11 @@ class PlannerAgent:
             max_retries=self.settings.max_retry_attempts
         )
         self.error_handler = get_error_handler()
+        self.last_generation_mode = "unknown"
+        self.last_llm_model_used: Optional[str] = None
+        self.use_custom_client = False
+        self.gemini_model_candidates: List[str] = []
+        self.current_gemini_model_index = 0
         
         # Initialize LLM client (OpenAI, Groq, or Gemini)
         if self.settings.use_openai and self.settings.openai_api_key:
@@ -91,16 +102,12 @@ class PlannerAgent:
                         recoverable=False
                     )
                 
-                # Use configured model or fallback to gemini-2.5-flash
-                model_name = self.settings.gemini_model or "gemini-2.5-flash"
-                # Use LangChain's default retry mechanism
-                self.llm = ChatGoogleGenerativeAI(
-                    model=model_name,
-                    google_api_key=self.settings.gemini_api_key,
-                    temperature=0.3,
-                    max_tokens=4000,
-                    timeout=60
+                configured_model = normalize_gemini_model_name(
+                    self.settings.gemini_model or "gemini-2.5-pro"
                 )
+                self.gemini_model_candidates = build_gemini_model_candidates(configured_model)
+
+                self._initialize_gemini_llm(self.gemini_model_candidates[0])
                 self.use_custom_client = False
             except Exception as e:
                 raise LLMAPIError(
@@ -108,6 +115,44 @@ class PlannerAgent:
                     details={'agent': 'planner', 'phase': 'initialization'},
                     recoverable=False
                 )
+
+    def _initialize_gemini_llm(self, model_name: str) -> None:
+        """Initialize Gemini LLM with the given model."""
+        self.llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=self.settings.gemini_api_key,
+            temperature=0.3,
+            max_tokens=4000,
+            timeout=60
+        )
+
+    def _call_llm(self, prompt: str) -> str:
+        """Call configured LLM with automatic Gemini model fallback on 404 model errors."""
+        if self.use_custom_client:
+            self.last_llm_model_used = "custom_client"
+            return self.llm_client.generate_content(prompt, temperature=0.2, max_tokens=7000)
+
+        last_error: Optional[Exception] = None
+        for idx in range(self.current_gemini_model_index, len(self.gemini_model_candidates)):
+            model_name = self.gemini_model_candidates[idx]
+            if idx != self.current_gemini_model_index:
+                self.current_gemini_model_index = idx
+                self._initialize_gemini_llm(model_name)
+                print(f"Planner switched Gemini model to: {model_name}")
+            try:
+                response = self.llm.invoke(prompt)
+                self.last_llm_model_used = model_name
+                return response.content
+            except Exception as e:
+                last_error = e
+                if not should_fallback_to_next_model(str(e)):
+                    raise
+                print(f"Planner Gemini model '{model_name}' failed; trying next candidate. Error: {str(e)[:180]}")
+                continue
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("LLM call failed with unknown error")
     
     def analyze_request(self, user_request: UserRequest) -> AgentResponse:
         """
@@ -204,7 +249,7 @@ class PlannerAgent:
             # Log warnings if any
             if structure_validation.get('warnings'):
                 for warning in structure_validation['warnings']:
-                    print(f"  ⚠️  Warning: {warning}")
+                    print(f"  âš ï¸  Warning: {warning}")
             
             # Store plan in episodic memory with validation results
             memory.add_entry(
@@ -228,7 +273,11 @@ class PlannerAgent:
             return AgentResponse(
                 agent_name='planner',
                 success=True,
-                output={'plan': plan.model_dump()},
+                output={
+                    'plan': plan.model_dump(),
+                    'llm_generation_mode': self.last_generation_mode,
+                    'llm_model_used': self.last_llm_model_used,
+                },
                 errors=[],
                 execution_time_ms=execution_time
             )
@@ -289,89 +338,118 @@ class PlannerAgent:
         # Create structured prompt for plan generation
         prompt = self._create_planning_prompt(description, context)
         
+        self.last_generation_mode = "unknown"
+        response_text = ""
+
         # Call LLM directly - let LangChain handle retries naturally
         try:
             # Call LLM (OpenAI, Groq, or Gemini)
-            if self.use_custom_client:
-                response_text = self.llm_client.generate_content(prompt, temperature=0.3, max_tokens=4000)
-            else:
-                response = self.llm.invoke(prompt)
-                response_text = response.content
-            
+            response_text = self._call_llm(prompt)
+
             # Parse JSON response
-            plan_json = self._extract_json_from_response(response_text)
-            
-            return plan_json
-            
-        except Exception as e:
-            # If LLM call fails, raise error immediately
-            raise LLMAPIError(
-                f"LLM plan generation failed: {str(e)}",
-                details={
-                    'agent': 'planner',
-                    'error_type': type(e).__name__
-                },
-                recoverable=False
-            )
+            parsed = self._extract_json_from_response(response_text)
+            self.last_generation_mode = "llm"
+            return parsed
+
+        except Exception as first_error:
+            # Retry once with a strict JSON-repair prompt before falling back
+            try:
+                content_to_fix = response_text.strip() if response_text else ""
+                if not content_to_fix:
+                    # If there is no model output to repair, preserve original error flow.
+                    raise first_error
+                repair_prompt = f"""
+Fix the following content into VALID JSON only.
+Return exactly one JSON object that follows this schema:
+{{
+  "pages": [{{"name":"HomePage","route":"/","components":["Header","HeroSection","Footer"],"description":"short"}}],
+  "components": [{{"name":"Header","type":"functional","props":{{"title":"string"}},"description":"short"}}],
+  "routing": {{"base_path":"/","routes":[{{"path":"/","component":"HomePage"}}],"navigation_links":[{{"label":"Home","path":"/"}}]}},
+  "backend_logic": null,
+  "estimated_complexity": "simple"
+}}
+Rules:
+- Output JSON only.
+- Use double quotes.
+- No trailing commas.
+- Max 5 pages.
+- Keep descriptions concise.
+
+Content to fix:
+{content_to_fix}
+"""
+                repaired = self._call_llm(repair_prompt)
+                parsed = self._extract_json_from_response(repaired)
+                self.last_generation_mode = "repaired_json"
+                return parsed
+            except Exception:
+                # Deterministic fallback so planner never blocks workflow
+                self.last_generation_mode = "fallback_plan"
+                return self._generate_fallback_plan(description)
     
     def _create_planning_prompt(self, description: str, context: Dict[str, Any]) -> str:
         """
         Create structured prompt for plan generation
-        
+
         Args:
             description: User's application description
             context: Session context from episodic memory
-            
+
         Returns:
             Formatted prompt string for LLM
         """
-        # Get RAG service to retrieve system prompt
-        from services.rag_service import get_rag_service
-        rag_service = get_rag_service()
-        
-        # Try to get comprehensive system prompt from knowledge base
-        system_prompt = ""
-        if rag_service.is_enabled:
-            try:
-                # Query for planner agent system prompt
-                rag_result = _run_async_in_thread(rag_service.retrieve_context(
-                    "planner agent system prompt comprehensive instructions",
-                    top_k=1
-                ))
-                if rag_result and rag_result.get('retrieved_docs'):
-                    system_prompt = rag_result['retrieved_docs'][0]['content']
-                    print(f"✓ Loaded comprehensive planner system prompt from RAG ({len(system_prompt)} chars)")
-            except Exception as e:
-                print(f"⚠️ Failed to load system prompt from RAG: {e}")
-        
-        # Fallback to basic prompt if RAG not available or failed
+        # 1) Prefer deterministic local prompt file for stable behavior
+        system_prompt = load_system_prompt("planner_agent_comprehensive_prompt.md") or ""
+        if system_prompt:
+            print(f"Loaded planner system prompt from file ({len(system_prompt)} chars)")
+
+        # 2) Fallback to RAG if file is unavailable
+        if not system_prompt:
+            from services.rag_service import get_rag_service
+            rag_service = get_rag_service()
+            if rag_service.is_enabled:
+                try:
+                    rag_result = _run_async_in_thread(rag_service.retrieve_context(
+                        "planner agent system prompt comprehensive instructions",
+                        top_k=1
+                    ))
+                    if rag_result and rag_result.get('retrieved_docs'):
+                        system_prompt = rag_result['retrieved_docs'][0]['content']
+                        print(f"Loaded planner system prompt from RAG ({len(system_prompt)} chars)")
+                except Exception as e:
+                    print(f"Failed to load planner system prompt from RAG: {e}")
+
+        # 3) Last-resort fallback prompt
         if not system_prompt:
             system_prompt = """
-You are a web application planner. Analyze the user's request and create a detailed implementation plan for a React application.
+You are the Planner Agent for AMAR.
+Convert natural-language requirements into a precise implementation plan for a production-ready React + TypeScript + Material UI website.
 
-CRITICAL DEPLOYMENT CONTEXT:
-- This application will be deployed to Vercel/Netlify automatically
-- Code must be production-ready with NO build errors or warnings
-- Use ONLY modern, stable dependencies (React 18+, TypeScript 4.9+)
-- Avoid deprecated packages and patterns
-- Follow current React best practices
+PRIMARY OBJECTIVE:
+- Plan for a site that is easy to use, visually impressive, and deployment-safe.
 
-IMPORTANT CONSTRAINTS:
-- Maximum 5 pages allowed
-- Generate React components with TypeScript
-- Include routing configuration
-- Detect if backend API endpoints are needed
-- Make reasonable assumptions for ambiguous requirements
+NON-NEGOTIABLE CONSTRAINTS:
+- Maximum 5 pages.
+- Routing and navigation must be complete and consistent.
+- Components must be reusable and clearly named.
+- Prefer stable, modern patterns only.
+- Include backend logic only when required by user interactions.
+
+UI DIRECTION REQUIREMENTS:
+- Enforce a clear visual direction: color strategy, typography hierarchy, spacing rhythm.
+- Require at least one hero section and one strong call-to-action.
+- Avoid generic skeleton layouts; plan intentional sections with clear hierarchy.
+- Ensure responsive behavior and accessibility are planned, not optional.
 """
-            print("⚠️ Using fallback planner system prompt")
-        
+            print("Using fallback planner system prompt")
+
         context_str = ""
         if context.get('relevant_context'):
             context_str = f"""
 Previous context from this session:
 {json.dumps(context['relevant_context'], indent=2)}
 """
-        
+
         prompt = f"""
 {system_prompt}
 
@@ -379,74 +457,165 @@ Previous context from this session:
 
 User Request: "{description}"
 
-BACKEND REQUIREMENT DETECTION:
-Carefully analyze the user request for these indicators that backend logic is needed:
-- Forms that submit data (contact forms, signup forms, feedback forms)
-- Data validation or processing (email validation, input sanitization)
-- API calls or data fetching
-- User interactions that require server-side logic
-- Any mention of "submit", "send", "save", "process", "validate"
-- Features like search, filtering, or data manipulation
+PLANNING REQUIREMENTS:
+- Create only the pages needed to satisfy the request.
+- For each page, provide a concrete description detailed enough to guide premium UI generation.
+- Keep all descriptions concise (max ~25 words each) to avoid token overflow.
+- Use component names that map directly to implementation (e.g., HeroSection, FeatureGrid, PricingCards, ContactFormSection).
+- Ensure navigation labels are clear and route paths are valid.
+- Reuse shared components across pages where appropriate.
 
-If ANY of these indicators are present, include backend_logic with appropriate endpoints.
+BACKEND REQUIREMENT DETECTION:
+Carefully analyze the user request for indicators that backend logic is needed:
+- Forms that submit data (contact forms, signup forms, feedback forms)
+- Data validation or processing (email validation, sanitization)
+- API calls or dynamic data fetching
+- Interactions requiring server-side handling
+- Mentions of "submit", "send", "save", "process", "validate"
+- Features like search, filtering, personalization, or data manipulation
+
+If ANY indicator is present, include backend_logic with appropriate endpoints.
 
 Generate a JSON response with this exact structure:
 
 {{
-    "pages": [
-        {{
-            "name": "HomePage",
-            "route": "/",
-            "components": ["Header", "Hero", "Footer"],
-            "description": "Main landing page with hero section"
-        }}
+  "pages": [
+    {{
+      "name": "HomePage",
+      "route": "/",
+      "components": ["Header", "HeroSection", "Footer"],
+      "description": "Main landing page with a premium hero and clear conversion path"
+    }}
+  ],
+  "components": [
+    {{
+      "name": "Header",
+      "type": "functional",
+      "props": {{"title": "string", "showNav": "boolean"}},
+      "description": "Top navigation with branding and responsive menu"
+    }}
+  ],
+  "routing": {{
+    "base_path": "/",
+    "routes": [
+      {{"path": "/", "component": "HomePage"}},
+      {{"path": "/about", "component": "AboutPage"}}
     ],
-    "components": [
-        {{
-            "name": "Header",
-            "type": "functional",
-            "props": {{"title": "string", "showNav": "boolean"}},
-            "description": "Navigation header component"
-        }}
+    "navigation_links": [
+      {{"label": "Home", "path": "/"}},
+      {{"label": "About", "path": "/about"}}
+    ]
+  }},
+  "backend_logic": {{
+    "endpoints": [
+      {{"method": "POST", "path": "/api/contact", "handler": "handleContact", "description": "Handle contact form submission"}}
     ],
-    "routing": {{
-        "base_path": "/",
-        "routes": [
-            {{"path": "/", "component": "HomePage"}},
-            {{"path": "/about", "component": "AboutPage"}}
-        ],
-        "navigation_links": [
-            {{"label": "Home", "path": "/"}},
-            {{"label": "About", "path": "/about"}}
-        ]
-    }},
-    "backend_logic": {{
-        "endpoints": [
-            {{"method": "POST", "path": "/api/contact", "handler": "handleContact", "description": "Handle contact form submission"}}
-        ],
-        "middleware": ["cors", "bodyParser"],
-        "dependencies": ["express"]
-    }},
-    "estimated_complexity": "simple"
+    "middleware": ["cors", "bodyParser"],
+    "dependencies": ["express"]
+  }},
+  "estimated_complexity": "simple"
 }}
 
 BACKEND ENDPOINT SPECIFICATION:
-- Each endpoint MUST have: method (GET/POST/PUT/DELETE), path, handler name, and description
+- Each endpoint MUST include method, path, handler, and description
 - Common patterns:
   * Contact forms: POST /api/contact
   * Search: GET /api/search
   * Form validation: POST /api/validate
   * Data submission: POST /api/submit
-- Include "cors" and "bodyParser" in middleware for API endpoints
-- Include "express" in dependencies for backend logic
+- Include "cors" and "bodyParser" in middleware when backend_logic is present
+- Include "express" in dependencies when backend_logic is present
 
-If no backend logic is needed (purely static content), set "backend_logic" to null.
-Complexity should be "simple", "medium", or "complex".
+If no backend logic is needed, set "backend_logic" to null.
+Complexity must be one of: "simple", "medium", "complex".
 
-Respond ONLY with valid JSON. No additional text or explanation.
+JSON FORMAT RULES:
+- Use only double quotes.
+- Do not use trailing commas.
+- Return a single complete JSON object.
+
+Respond ONLY with valid JSON. No markdown. No explanations.
 """
         return prompt
-    
+
+    def _generate_fallback_plan(self, description: str) -> Dict:
+        """
+        Generate a deterministic backup plan when LLM output is invalid.
+        This keeps workflow execution resilient under token/memory pressure.
+        """
+        backend_detection = self.detect_backend_requirements(description)
+        needs_backend = backend_detection.get('needs_backend', False)
+
+        pages = [
+            {
+                "name": "HomePage",
+                "route": "/",
+                "components": ["Header", "HeroSection", "FeatureSection", "CallToActionSection", "Footer"],
+                "description": "Landing page with hero, value highlights, and clear calls to action."
+            },
+            {
+                "name": "MenuPage",
+                "route": "/menu",
+                "components": ["Header", "PageTitleSection", "MenuSection", "Footer"],
+                "description": "Coffee and food menu with categories, descriptions, and prices."
+            },
+            {
+                "name": "AboutPage",
+                "route": "/about",
+                "components": ["Header", "PageTitleSection", "AboutUsSection", "Footer"],
+                "description": "Story, values, sourcing quality, and the shop experience."
+            },
+            {
+                "name": "ContactPage",
+                "route": "/contact",
+                "components": ["Header", "PageTitleSection", "LocationMapSection", "ContactFormSection", "Footer"],
+                "description": "Address, opening hours, map, and contact form for inquiries."
+            }
+        ]
+
+        components = [
+            {"name": "Header", "type": "functional", "props": {"brandName": "string"}, "description": "Responsive top navigation with brand and links."},
+            {"name": "Footer", "type": "functional", "props": {"copyrightText": "string"}, "description": "Footer with utility links and brand info."},
+            {"name": "HeroSection", "type": "functional", "props": {"title": "string", "subtitle": "string", "ctaText": "string"}, "description": "High-impact hero with clear value proposition."},
+            {"name": "FeatureSection", "type": "functional", "props": {"features": "Array<string>"}, "description": "Grid highlighting signature offerings and benefits."},
+            {"name": "CallToActionSection", "type": "functional", "props": {"title": "string", "ctaText": "string"}, "description": "Conversion-focused section with prominent action buttons."},
+            {"name": "PageTitleSection", "type": "functional", "props": {"title": "string", "subtitle": "string"}, "description": "Reusable title band for inner pages."},
+            {"name": "MenuSection", "type": "functional", "props": {"menuCategories": "Array<string>"}, "description": "Menu listing grouped by category with pricing."},
+            {"name": "AboutUsSection", "type": "functional", "props": {"content": "string"}, "description": "Brand story and mission content block."},
+            {"name": "LocationMapSection", "type": "functional", "props": {"address": "string"}, "description": "Location details and map/embed area."},
+            {"name": "ContactFormSection", "type": "functional", "props": {"submitLabel": "string"}, "description": "Inquiry form with validation and submission states."}
+        ]
+
+        routes = [{"path": p["route"], "component": p["name"]} for p in pages]
+        nav_links = [{"label": p["name"].replace("Page", ""), "path": p["route"]} for p in pages]
+
+        backend_logic = None
+        if needs_backend:
+            endpoints = backend_detection.get('suggested_endpoints', [])
+            if not endpoints:
+                endpoints = [{
+                    "method": "POST",
+                    "path": "/api/contact",
+                    "handler": "handleContact",
+                    "description": "Handle contact form submission."
+                }]
+            backend_logic = {
+                "endpoints": endpoints,
+                "middleware": ["cors", "bodyParser"],
+                "dependencies": ["express"]
+            }
+
+        return {
+            "pages": pages,
+            "components": components,
+            "routing": {
+                "base_path": "/",
+                "routes": routes,
+                "navigation_links": nav_links
+            },
+            "backend_logic": backend_logic,
+            "estimated_complexity": "medium"
+        }
     def _extract_json_from_response(self, response_text: str) -> Dict:
         """
         Extract and parse JSON from LLM response
@@ -462,10 +631,17 @@ Respond ONLY with valid JSON. No additional text or explanation.
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
-                return json.loads(json_str)
+                parsed_json = json.loads(json_str)
             else:
                 # If no JSON found, try parsing the entire response
-                return json.loads(response_text.strip())
+                parsed_json = json.loads(response_text.strip())
+            
+            # ðŸš¨ CRITICAL: Pre-validate page count immediately after parsing
+            pages_data = parsed_json.get('pages', [])
+            if len(pages_data) > 5:
+                raise ValueError(f"CRITICAL ERROR: LLM generated {len(pages_data)} pages, but maximum allowed is 5. This violates system constraints.")
+            
+            return parsed_json
                 
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in LLM response: {str(e)}\nResponse: {response_text}")
@@ -489,6 +665,9 @@ Respond ONLY with valid JSON. No additional text or explanation.
             for page_data in plan_dict.get('pages', []):
                 page = PageSpec(**page_data)
                 pages.append(page)
+            
+            # ðŸš¨ CRITICAL: Validate page count BEFORE proceeding
+            self._validate_page_count(pages)
             
             # Create ComponentSpec objects with type normalization
             components = []

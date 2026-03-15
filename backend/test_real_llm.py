@@ -36,7 +36,7 @@ def test_real_llm_call():
         print("✅ Planner Agent initialized successfully!\n")
         
         # Make the actual API call
-        print("🚀 Making REAL API call to Gemini...")
+        print(" Making REAL API call to Gemini...")
         response = planner.analyze_request(user_request)
         
         if response.success:

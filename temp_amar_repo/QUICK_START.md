@@ -1,14 +1,17 @@
 # AMAR Quick Start Guide
 
-## 🚀 Get Started in 3 Steps
+## Get Started in 3 Steps
 
 ### 1. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Configure API Key
+
 Create `.env` file:
+
 ```bash
 GEMINI_API_KEY=your_api_key_here
 ```
@@ -16,18 +19,23 @@ GEMINI_API_KEY=your_api_key_here
 ### 3. Run the System
 
 #### For Phase 2 AI Agent Integration
+
 ```bash
 python export_for_phase2.py "Build a task management app" all
 ```
+
 Output: `phase2_exports/export_*.{json,md,txt}`
 
 #### For Interactive Exploration
+
 ```bash
 python dynamic_knowledge_base.py
 ```
+
 Commands: `phase2`, `save`, `stats`, `help`, `exit`
 
 #### For Demo
+
 ```bash
 python demo_phase2_workflow.py
 ```
@@ -42,6 +50,7 @@ python demo_phase2_workflow.py
 ## 🎯 What You Get
 
 Every query generates:
+
 - ✅ 90-95% confidence specifications
 - ✅ 20-30+ implementation steps
 - ✅ Modern UI/UX guidelines
@@ -56,6 +65,7 @@ python export_for_phase2.py "Build a real-time chat app" all
 ```
 
 Generates:
+
 - `export_XXXX.json` - Structured data
 - `export_XXXX.md` - Documentation
 - `export_XXXX_prompt.txt` - AI agent prompt

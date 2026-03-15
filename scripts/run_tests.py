@@ -50,7 +50,7 @@ def run_frontend_tests():
 
 def main():
     """Run all tests"""
-    print("🚀 Running AMAR MVP test suite...\n")
+    print(" Running AMAR MVP test suite...\n")
     
     backend_success = run_backend_tests()
     print()

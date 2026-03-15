@@ -38,7 +38,7 @@ R:\StartUp\New folder (2)\generated_projects\amar_project_20251208_210530
 https://amar-app-abc123.vercel.app
 ```
 
-## 🚀 What You Can Do
+## What You Can Do
 
 ### 1. View the Files
 
@@ -142,7 +142,7 @@ python main.py
 📁 Files saved to: R:\StartUp\New folder (2)\generated_projects\amar_project_20251208_210530
    You can find your generated project at this location!
 
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 📤 Uploading 15 files to Vercel...
 ⏳ Monitoring deployment status...
 ✓ Deployment ready!

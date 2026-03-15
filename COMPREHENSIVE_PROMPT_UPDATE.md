@@ -69,7 +69,7 @@ Example:
 
 - Real, engaging content (NO Lorem ipsum)
 - Multiple sections
-- Emojis for visual interest (🚀 💡 ⭐)
+- Emojis for visual interest ( 💡 ⭐)
 - Professional tone
 - Matches page description
 
@@ -151,7 +151,7 @@ const HomePage: React.FC = () => {
             textShadow: "2px 2px 4px rgba(0,0,0,0.2)",
           }}
         >
-          🚀 Welcome to the Future of AI
+           Welcome to the Future of AI
         </h1>
         <p
           style={{

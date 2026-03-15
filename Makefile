@@ -14,7 +14,7 @@ help:
 	@echo "clean          - Clean build artifacts"
 
 setup:
-	@echo "🚀 Setting up AMAR MVP..."
+	@echo " Setting up AMAR MVP..."
 	python setup.py
 
 install:

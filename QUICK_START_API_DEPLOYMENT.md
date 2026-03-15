@@ -1,6 +1,6 @@
 # Quick Start: API-Based Deployment
 
-## 🚀 Get Started in 3 Steps
+## Get Started in 3 Steps
 
 ### Step 1: Get Your Token (2 minutes)
 
@@ -69,7 +69,7 @@ Build a landing page about AI, keep it simple with just 1 page
 **Output:**
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 📤 Uploading 17 files to Vercel...
 ⏳ Monitoring deployment status...
 ✓ Deployment ready!

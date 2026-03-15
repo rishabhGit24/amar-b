@@ -131,6 +131,6 @@ These won't be pushed.
 
 ---
 
-## Ready to Push! 🚀
+## Ready to Push!
 
 Just copy-paste the complete command sequence above!

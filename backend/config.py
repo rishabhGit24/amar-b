@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     
     # API Keys
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"  # Use gemini-2.5-flash which is stable and widely available
+    gemini_model: str = "gemini-2.5-pro"  # Default to Pro; fallback logic handles model failures
     groq_api_key: str = ""
     openai_api_key: str = ""
     use_groq: bool = False

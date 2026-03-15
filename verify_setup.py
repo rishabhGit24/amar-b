@@ -130,7 +130,7 @@ def print_summary():
     print("├── .kiro/specs/      # Project specifications")
     print("└── README.md         # Documentation")
     
-    print("\n🚀 Development Commands:")
+    print("\n Development Commands:")
     print("Backend:")
     print("  cd backend && python main.py")
     print("Frontend:")

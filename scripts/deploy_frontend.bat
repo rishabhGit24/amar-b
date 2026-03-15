@@ -3,7 +3,7 @@ REM AMAR MVP Frontend Deployment Script for Windows
 REM This script helps deploy the frontend to Vercel or Netlify
 
 echo.
-echo 🚀 AMAR MVP Frontend Deployment
+echo  AMAR MVP Frontend Deployment
 echo ================================
 echo.
 
@@ -51,7 +51,7 @@ if "%PLATFORM%"=="vercel" (
     echo REACT_APP_API_URL=%BACKEND_URL% > .env.production
     
     REM Deploy
-    echo 🚀 Deploying to Vercel...
+    echo  Deploying to Vercel...
     vercel --prod
     
     echo.
@@ -87,7 +87,7 @@ if "%PLATFORM%"=="vercel" (
     npm run build
     
     REM Deploy
-    echo 🚀 Deploying to Netlify...
+    echo  Deploying to Netlify...
     netlify deploy --prod
     
     echo.

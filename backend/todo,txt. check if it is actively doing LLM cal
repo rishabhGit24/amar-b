@@ -1,0 +1,2 @@
+1. check if it is actively doing LLM calls
+2. Add a prompt generator that can model and transform the user requirement and prompt into something thats more appropriate to our system

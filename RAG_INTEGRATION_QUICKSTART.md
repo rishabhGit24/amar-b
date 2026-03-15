@@ -327,4 +327,4 @@ Everything else is already wired up!
 
 Once you implement the three methods above, the entire system will automatically use RAG enrichment for all user queries!
 
-Good luck! 🚀
+Good luck!

@@ -46,7 +46,7 @@ def test_api_key():
         
         # Test with the first available model
         model_name = available_models[0]
-        print(f"\n🚀 Testing with model: {model_name}")
+        print(f"\n Testing with model: {model_name}")
         
         model = genai.GenerativeModel(model_name)
         response = model.generate_content("Say hello in JSON format")

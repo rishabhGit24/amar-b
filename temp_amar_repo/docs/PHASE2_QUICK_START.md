@@ -1,6 +1,6 @@
 # Phase 2 Quick Start Guide
 
-## 🚀 Get Started in 3 Steps
+## Get Started in 3 Steps
 
 ### 1. Query the System
 
@@ -9,6 +9,7 @@ python export_for_phase2.py "Your build request here" all
 ```
 
 Example:
+
 ```bash
 python export_for_phase2.py "Build a task management web app with real-time collaboration" all
 ```
@@ -45,7 +46,7 @@ response = your_ai_agent.generate(agent_prompt)
 ✅ **UI/UX Guidelines** - Modern design requirements  
 ✅ **Technology Stack** - Exact tools and versions  
 ✅ **Best Practices** - Security, performance, scalability  
-✅ **Code Structure** - Complete project organization  
+✅ **Code Structure** - Complete project organization
 
 ### High Confidence: 90-95%
 
@@ -66,11 +67,13 @@ Every specification includes explicit UI/UX requirements:
 ## 💡 Example Output
 
 ### Input Query
+
 ```
 "Build a real-time chat application"
 ```
 
 ### Output Includes
+
 ```
 ## Overview
 A real-time chat application using WebSocket...
@@ -114,6 +117,7 @@ python dynamic_knowledge_base.py
 ```
 
 Commands:
+
 - Type your question
 - `phase2` - Toggle Phase 2 format
 - `save` - Save knowledge base
@@ -121,16 +125,17 @@ Commands:
 
 ## 📊 Confidence Levels
 
-| Range | Meaning | Action |
-|-------|---------|--------|
-| 90-95% | High confidence | Use directly |
-| 85-90% | Good confidence | Minor validation |
+| Range  | Meaning           | Action           |
+| ------ | ----------------- | ---------------- |
+| 90-95% | High confidence   | Use directly     |
+| 85-90% | Good confidence   | Minor validation |
 | 75-85% | Decent confidence | Review carefully |
-| <75% | Low confidence | Auto web search |
+| <75%   | Low confidence    | Auto web search  |
 
 ## 🔄 Automatic Knowledge Expansion
 
 If confidence is low (<30%), the system:
+
 1. Searches the web automatically
 2. Synthesizes structured answer
 3. Saves to knowledge base
@@ -198,15 +203,19 @@ AMAR/
 ## 🚨 Troubleshooting
 
 ### Issue: Low confidence
+
 **Solution**: System auto-searches web and expands knowledge base
 
 ### Issue: Export fails
+
 **Solution**: Check `phase2_exports/` directory exists
 
 ### Issue: Web search error
+
 **Solution**: Check internet connection
 
 ### Issue: Missing sections
+
 **Solution**: LLM may need more context; try rephrasing query
 
 ## 📚 More Information
@@ -221,6 +230,7 @@ AMAR/
 Your Phase 1 RAG system is optimized to generate high-quality, structured specifications that Phase 2 AI agents can use to build production-ready applications with modern, user-friendly interfaces.
 
 **Start building now:**
+
 ```bash
 python export_for_phase2.py "Your amazing app idea" all
 ```

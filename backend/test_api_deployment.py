@@ -56,7 +56,7 @@ def test_deployment_setup():
     availability = deployer.check_platform_availability()
     
     print()
-    print("🚀 Deployment Platform Status:")
+    print(" Deployment Platform Status:")
     print("-" * 60)
     print(f"Vercel Available: {'✅ Yes' if availability['vercel'] else '❌ No'}")
     print(f"Netlify Available: {'✅ Yes' if availability['netlify'] else '❌ No'}")

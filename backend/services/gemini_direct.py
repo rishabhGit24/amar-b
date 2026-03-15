@@ -16,7 +16,7 @@ class GeminiDirectClient:
         self.settings = get_settings()
         self.api_key = self.settings.gemini_api_key
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-        self.model = "gemini-1.5-flash-latest"
+        self.model = self.settings.gemini_model or "gemini-2.5-pro"
     
     def generate_content(self, prompt: str, system_instruction: Optional[str] = None) -> str:
         """

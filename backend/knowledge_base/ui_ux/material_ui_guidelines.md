@@ -4,7 +4,9 @@
 
 **EVERY generated project MUST use Material-UI components throughout.** No plain HTML/CSS-only pages.
 
-## Why Material-UI?
+**THIS IS NON-NEGOTIABLE**: Any project generated without Material-UI components will be considered a failure and must be regenerated.
+
+## Why Material-UI is Mandatory?
 
 1. **Professional Design**: Pre-built, tested components with modern aesthetics
 2. **Consistent Styling**: Cohesive design system across all elements
@@ -12,8 +14,10 @@
 4. **Accessibility Built-in**: WCAG compliant components
 5. **Theming Support**: Easy color customization and branding
 6. **Rich Component Library**: 50+ components ready to use
+7. **Production Ready**: Battle-tested in thousands of applications
+8. **No Version Conflicts**: Eliminates dependency and styling issues
 
-## Required MUI Packages
+## 🚨 MANDATORY MUI Packages - MUST BE INCLUDED
 
 ```json
 {
@@ -24,7 +28,54 @@
 }
 ```
 
-**These MUST be included in EVERY package.json**
+**These MUST be included in EVERY package.json - NO EXCEPTIONS**
+
+## 🚨 MANDATORY: ThemeProvider Setup
+
+**EVERY project MUST include a ThemeProvider with custom theme in App.tsx or index.tsx:**
+
+```typescript
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+
+const theme = createTheme({
+  palette: {
+    mode: 'dark', // or 'light'
+    primary: {
+      main: '#667eea',
+      light: '#a5b4fc',
+      dark: '#4c51bf',
+    },
+    secondary: {
+      main: '#f59e0b',
+      light: '#fbbf24',
+      dark: '#d97706',
+    },
+    background: {
+      default: '#f9fafb',
+      paper: '#ffffff',
+    },
+  },
+  typography: {
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h1: { fontSize: '3.5rem', fontWeight: 700 },
+    h2: { fontSize: '2.5rem', fontWeight: 600 },
+    button: { textTransform: 'none', fontWeight: 600 },
+  },
+  shape: { borderRadius: 12 },
+});
+
+function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      {/* Your app content */}
+    </ThemeProvider>
+  );
+}
+```
+
+**This setup is MANDATORY - no project should be generated without it.**
 
 ## Core MUI Components to Use
 
@@ -93,6 +144,7 @@ import { Typography } from '@mui/material';
 ```
 
 **Typography Variants**:
+
 - `h1`, `h2`, `h3`, `h4`, `h5`, `h6` - Headings
 - `subtitle1`, `subtitle2` - Subheadings
 - `body1`, `body2` - Body text
@@ -325,7 +377,7 @@ The `sx` prop allows inline styling with theme access and responsive design:
     p: 3,  // Padding: 3 * 8px = 24px
     m: 2,  // Margin: 2 * 8px = 16px
     borderRadius: 2,  // Border radius: 2 * 4px = 8px
-    
+
     // Responsive styles
     width: {
       xs: '100%',    // Mobile: full width
@@ -333,23 +385,23 @@ The `sx` prop allows inline styling with theme access and responsive design:
       md: '60%',     // Desktop: 60%
       lg: '50%',     // Large: 50%
     },
-    
+
     // Hover effects
     '&:hover': {
       bgcolor: 'primary.dark',
       transform: 'scale(1.05)',
     },
-    
+
     // Flexbox
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
-    
+
     // Gradients
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    
+
     // Shadows
     boxShadow: 3,  // Theme shadow level (0-24)
   }}
@@ -394,7 +446,7 @@ const Home: React.FC = () => {
       <AppBar position="sticky" elevation={0}>
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700 }}>
-            🚀 StartupName
+             StartupName
           </Typography>
           <Button color="inherit">Features</Button>
           <Button color="inherit">Pricing</Button>
@@ -553,8 +605,9 @@ Before generating code, ensure:
 ## Common MUI Patterns
 
 ### Hero Section
+
 ```typescript
-<Box sx={{ 
+<Box sx={{
   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   color: 'white',
   py: { xs: 8, md: 12 },
@@ -569,6 +622,7 @@ Before generating code, ensure:
 ```
 
 ### Feature Grid
+
 ```typescript
 <Grid container spacing={4}>
   {features.map((feature, index) => (
@@ -587,6 +641,7 @@ Before generating code, ensure:
 ```
 
 ### Navigation Bar
+
 ```typescript
 <AppBar position="sticky">
   <Toolbar>
@@ -601,6 +656,7 @@ Before generating code, ensure:
 ## CRITICAL: Always Use MUI
 
 ❌ **NEVER** generate plain HTML like this:
+
 ```typescript
 <div style={{ backgroundColor: '#000' }}>
   <h1>Title</h1>
@@ -610,6 +666,7 @@ Before generating code, ensure:
 ```
 
 ✅ **ALWAYS** use MUI components:
+
 ```typescript
 <Box sx={{ bgcolor: 'primary.main', p: 4 }}>
   <Typography variant="h1">Title</Typography>
@@ -621,6 +678,7 @@ Before generating code, ensure:
 ## Summary
 
 **Material-UI is MANDATORY. Every generated project must:**
+
 1. Include MUI packages in package.json
 2. Wrap app in ThemeProvider with custom theme
 3. Use MUI components (Box, Container, Typography, Button, Card, Grid, etc.)
@@ -630,3 +688,59 @@ Before generating code, ensure:
 
 **NO plain HTML/CSS-only pages!**
 
+## 🚨 ENFORCEMENT RULES FOR AGENTS
+
+### For Planner Agent:
+
+- MUST specify in plan that Material-UI is required
+- MUST include MUI components in component specifications
+- MUST note that ThemeProvider setup is required
+
+### For Builder Agent:
+
+- MUST include MUI packages in every package.json
+- MUST set up ThemeProvider with custom theme
+- MUST use MUI components instead of plain HTML elements
+- MUST use sx prop for styling instead of inline styles where possible
+- MUST create professional, colorful designs using MUI theme system
+
+### For Deployer Agent:
+
+- MUST verify MUI packages are installed before deployment
+- MUST check that ThemeProvider is properly configured
+- MUST validate that components use MUI instead of plain HTML
+
+## 🚨 VALIDATION CHECKLIST
+
+Before any project is considered complete, verify:
+
+- [ ] **Package.json includes**: @mui/material, @mui/icons-material, @emotion/react, @emotion/styled
+- [ ] **ThemeProvider** wraps the entire app with custom theme
+- [ ] **CssBaseline** component is included
+- [ ] **Typography** components used for ALL text (no plain h1, p, span tags)
+- [ ] **Button** components used for all clickable elements
+- [ ] **Container/Box** components used for layout (no plain divs)
+- [ ] **Card** components used for content sections
+- [ ] **Grid** or **Stack** used for responsive layouts
+- [ ] **AppBar/Toolbar** used for navigation
+- [ ] **sx prop** used for styling with theme values
+- [ ] **Icons** from @mui/icons-material used where appropriate
+- [ ] **Responsive breakpoints** implemented using sx prop
+- [ ] **Color scheme** uses theme.palette colors consistently
+- [ ] **Professional appearance** with modern design patterns
+
+**If ANY of these items are missing, the project MUST be regenerated with proper MUI implementation.**
+
+## 🚨 FAILURE CONDITIONS
+
+A project is considered FAILED and must be regenerated if:
+
+- Plain HTML elements (div, h1, p, button) are used instead of MUI components
+- No ThemeProvider setup is present
+- MUI packages are missing from package.json
+- Styling uses only inline styles without MUI theme integration
+- Design looks basic or unprofessional
+- No responsive design implementation
+- Missing CssBaseline component
+
+**Zero tolerance for non-MUI implementations.**

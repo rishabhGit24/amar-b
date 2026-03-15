@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🚀 AMAR MVP Frontend Deployment"
+echo " AMAR MVP Frontend Deployment"
 echo "================================"
 echo ""
 
@@ -58,7 +58,7 @@ if [ "$PLATFORM" = "vercel" ]; then
     echo "REACT_APP_API_URL=$BACKEND_URL" > .env.production
     
     # Deploy
-    echo "🚀 Deploying to Vercel..."
+    echo " Deploying to Vercel..."
     vercel --prod
     
     echo ""
@@ -93,7 +93,7 @@ elif [ "$PLATFORM" = "netlify" ]; then
     npm run build
     
     # Deploy
-    echo "🚀 Deploying to Netlify..."
+    echo " Deploying to Netlify..."
     netlify deploy --prod
     
     echo ""

@@ -118,7 +118,7 @@ def print_next_steps():
     print("   - VERCEL_TOKEN=your_vercel_token_here (optional)")
     print("   - NETLIFY_TOKEN=your_netlify_token_here (optional)")
     
-    print("\n🚀 Development:")
+    print("\n Development:")
     print("1. Start backend: python scripts/start_backend.py")
     print("2. Start frontend: cd frontend && npm start")
     print("3. Run tests: python scripts/run_tests.py")
@@ -129,7 +129,7 @@ def print_next_steps():
 
 def main():
     """Main setup function"""
-    print("🚀 AMAR MVP Development Environment Setup\n")
+    print(" AMAR MVP Development Environment Setup\n")
     
     if not check_prerequisites():
         print("\n❌ Prerequisites check failed!")

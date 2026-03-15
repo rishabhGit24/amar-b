@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🚀 AMAR MVP Backend Deployment"
+echo " AMAR MVP Backend Deployment"
 echo "================================"
 echo ""
 
@@ -45,7 +45,7 @@ if [ "$PLATFORM" = "railway" ]; then
     fi
     
     # Deploy
-    echo "🚀 Deploying to Railway..."
+    echo " Deploying to Railway..."
     railway up
     
     echo ""
@@ -109,7 +109,7 @@ elif [ "$PLATFORM" = "heroku" ]; then
     heroku config:set ENVIRONMENT=production
     
     # Deploy
-    echo "🚀 Deploying to Heroku..."
+    echo " Deploying to Heroku..."
     git push heroku main
     
     echo ""

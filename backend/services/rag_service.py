@@ -12,6 +12,7 @@ Validates: Requirements 11.1, 11.2, 11.3
 
 from typing import Dict, List, Optional, Any
 import logging
+import gc
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,25 @@ class RAGService:
         self.is_enabled = False
         self.rag_pipeline = None
         
+        # Respect explicit low-memory configuration
+        disable_rag_env = os.getenv("DISABLE_RAG", "false").lower() == "true"
+        if disable_rag_env:
+            logger.info("RAG disabled by environment variable DISABLE_RAG=true")
+            return
+
+        # Skip loading heavy pipeline when memory is already very low
+        try:
+            import psutil
+            available_gb = psutil.virtual_memory().available / (1024 ** 3)
+            if available_gb < 1.5:
+                logger.warning(
+                    f"RAG auto-disabled at startup due to low available memory ({available_gb:.2f} GB)"
+                )
+                return
+        except Exception:
+            # If memory check fails, continue with best effort
+            pass
+
         # Try to load RAG pipeline
         try:
             index_file = f"{self.knowledge_base_path}.index"
@@ -230,8 +250,14 @@ Use this context to inform your planning."""
             self.is_enabled = False
     
     def disable_rag(self):
-        """Disable RAG-FAISS system (fallback to direct query processing)"""
+        """
+        Disable RAG-FAISS system and release heavy in-memory objects.
+
+        This supports graceful degradation on low-memory hosts.
+        """
         self.is_enabled = False
+        self.rag_pipeline = None
+        gc.collect()
         logger.info("RAG-FAISS disabled")
 
 

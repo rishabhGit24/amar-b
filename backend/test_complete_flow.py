@@ -174,7 +174,7 @@ except Exception as e:
 print()
 
 # Step 7: Simulated Workflow Execution
-print("🚀 STEP 7: SIMULATED WORKFLOW EXECUTION")
+print(" STEP 7: SIMULATED WORKFLOW EXECUTION")
 print("-" * 80)
 print("Simulating a complete workflow execution...")
 print()
@@ -200,7 +200,7 @@ async def simulate_workflow():
             "planner": "📋",
             "builder": "🔨",
             "tester": "🧪",
-            "deployer": "🚀",
+            "deployer": "",
             "finalize": "✅"
         }.get(agent, "▶️")
         

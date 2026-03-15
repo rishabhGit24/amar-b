@@ -3,7 +3,7 @@ REM AMAR MVP Backend Deployment Script for Windows
 REM This script helps deploy the backend to Railway or Heroku
 
 echo.
-echo 🚀 AMAR MVP Backend Deployment
+echo  AMAR MVP Backend Deployment
 echo ================================
 echo.
 
@@ -38,7 +38,7 @@ if "%PLATFORM%"=="railway" (
     )
     
     REM Deploy
-    echo 🚀 Deploying to Railway...
+    echo  Deploying to Railway...
     railway up
     
     echo.
@@ -94,7 +94,7 @@ if "%PLATFORM%"=="railway" (
     heroku config:set ENVIRONMENT=production
     
     REM Deploy
-    echo 🚀 Deploying to Heroku...
+    echo  Deploying to Heroku...
     git push heroku main
     
     echo.

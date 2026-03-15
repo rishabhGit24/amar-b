@@ -156,7 +156,6 @@ git push -u origin main --force
 
 1. Go to GitHub repository settings
 2. Add secrets for deployment:
-
    - `GEMINI_API_KEY`
    - `GROQ_API_KEY`
    - `VERCEL_TOKEN`
@@ -189,4 +188,4 @@ git lfs track "*.index"
 
 ---
 
-## Ready to Push! 🚀
+## Ready to Push!

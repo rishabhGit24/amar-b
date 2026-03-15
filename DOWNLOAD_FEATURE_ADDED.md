@@ -64,7 +64,7 @@ Added a prominent download button in the result section:
 ### When npm is NOT available:
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 
 ✓ DEPLOYER: Project ready for manual deployment
 

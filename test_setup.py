@@ -90,7 +90,7 @@ def test_root_files():
 
 def main():
     """Run all tests"""
-    print("🚀 Testing AMAR MVP project structure...\n")
+    print(" Testing AMAR MVP project structure...\n")
     
     try:
         test_backend_structure()

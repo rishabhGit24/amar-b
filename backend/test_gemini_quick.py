@@ -20,7 +20,7 @@ try:
     
     print("\n✓ Initializing Gemini client...")
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-live",
+        model="gemini-2.5-pro-live",
         google_api_key=api_key,
         temperature=0.3
     )

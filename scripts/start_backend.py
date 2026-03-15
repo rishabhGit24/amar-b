@@ -14,7 +14,7 @@ def main():
     backend_dir = Path(__file__).parent.parent / "backend"
     os.chdir(backend_dir)
     
-    print("🚀 Starting AMAR MVP Backend...")
+    print(" Starting AMAR MVP Backend...")
     print(f"📁 Working directory: {backend_dir}")
     
     # Check if .env exists

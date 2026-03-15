@@ -75,7 +75,7 @@ User Input: "Build a landing page about AI, keep it simple with just 1 page"
 Expected output:
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 📤 Uploading files to Vercel...
 ⏳ Monitoring deployment status...
 ✓ Deployment ready!

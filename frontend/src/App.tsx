@@ -86,7 +86,7 @@ function App() {
       if (update.type === "complete") {
         console.log(
           "Complete message received with deployment_url:",
-          update.deployment_url
+          update.deployment_url,
         ); // Debug log
         // If deployment URL is in the message, create result immediately
         if (update.deployment_url) {
@@ -134,11 +134,11 @@ function App() {
       ) {
         console.log(
           "Deployment URL found in progress details:",
-          update.details
+          update.details,
         ); // Debug log
         // Extract URL from details if present
         const urlMatch = update.details.match(
-          /🌐 Deployment URL:\s*(https?:\/\/[^\s\n]+)/
+          /🌐 Deployment URL:\s*(https?:\/\/[^\s\n]+)/,
         );
         if (urlMatch && urlMatch[1]) {
           console.log("Extracted deployment URL from deployer:", urlMatch[1]); // Debug log
@@ -168,7 +168,7 @@ function App() {
         console.log("Finalize message received:", update.details); // Debug log
         // Extract URL from details if present
         const urlMatch = update.details.match(
-          /🌐 Deployment URL:\s*(https?:\/\/[^\s]+)/
+          /🌐 Deployment URL:\s*(https?:\/\/[^\s]+)/,
         );
         if (urlMatch && urlMatch[1]) {
           console.log("Extracted deployment URL from finalize:", urlMatch[1]); // Debug log
@@ -329,7 +329,7 @@ function App() {
                   className="btn btn-primary btn-full"
                   disabled={isGenerating || !description.trim()}
                 >
-                  <span>🚀</span>
+                  <span></span>
                   <span>Generate Application</span>
                 </button>
               </form>
@@ -533,7 +533,7 @@ function App() {
                   <button
                     onClick={() => {
                       const downloadUrl = getApiEndpoint(
-                        `/api/download/${sessionId}`
+                        `/api/download/${sessionId}`,
                       );
                       window.location.href = downloadUrl;
                     }}

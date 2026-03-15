@@ -35,6 +35,8 @@ class GracefulFailureHandler:
         self.memory_critical_threshold = 95  # Percent
         self.disk_warning_threshold = 85  # Percent
         self.disk_critical_threshold = 95  # Percent
+        self.memory_min_free_critical_gb = 1.0
+        self.disk_min_free_critical_gb = 5.0
         
         # Cleanup tracking
         self.temp_directories: List[str] = []
@@ -59,7 +61,12 @@ class GracefulFailureHandler:
                 # Check again
                 memory_ok, memory_msg = self._check_memory()
                 if not memory_ok:
-                    return False, memory_msg
+                    # Degrade gracefully: disable heavy RAG pipeline if active
+                    self._attempt_rag_degradation()
+                    self._attempt_memory_cleanup()
+                    memory_ok, memory_msg = self._check_memory()
+                    if not memory_ok:
+                        return False, memory_msg
             
             # Check disk space
             disk_ok, disk_msg = self._check_disk_space()
@@ -78,6 +85,19 @@ class GracefulFailureHandler:
             self.logger.error(f"Error checking system resources: {str(e)}")
             # Don't fail if we can't check resources
             return True, None
+
+    def _attempt_rag_degradation(self):
+        """
+        Disable RAG pipeline to reduce memory pressure when system is critical.
+        """
+        try:
+            from .rag_service import get_rag_service
+            rag_service = get_rag_service()
+            if getattr(rag_service, "is_enabled", False):
+                self.logger.warning("Memory critical. Disabling RAG for degraded mode.")
+                rag_service.disable_rag()
+        except Exception as e:
+            self.logger.error(f"Failed to degrade RAG under memory pressure: {str(e)}")
     
     def _check_memory(self) -> Tuple[bool, Optional[str]]:
         """
@@ -89,18 +109,23 @@ class GracefulFailureHandler:
         try:
             memory = psutil.virtual_memory()
             memory_percent = memory.percent
+            available_gb = memory.available / (1024**3)
             
-            if memory_percent >= self.memory_critical_threshold:
+            # Treat as critical only when pressure is high and absolute free memory is low
+            if (
+                memory_percent >= self.memory_critical_threshold
+                and available_gb < self.memory_min_free_critical_gb
+            ):
                 return False, (
                     f"Critical memory usage: {memory_percent:.1f}%. "
-                    f"Available: {memory.available / (1024**3):.2f} GB. "
+                    f"Available: {available_gb:.2f} GB. "
                     "System cannot continue safely. Please free up memory and try again."
                 )
             
             if memory_percent >= self.memory_warning_threshold:
                 self.logger.warning(
                     f"High memory usage: {memory_percent:.1f}%. "
-                    f"Available: {memory.available / (1024**3):.2f} GB"
+                    f"Available: {available_gb:.2f} GB"
                 )
             
             return True, None
@@ -117,20 +142,26 @@ class GracefulFailureHandler:
             Tuple of (is_ok, error_message)
         """
         try:
-            disk = psutil.disk_usage('/')
+            # Use current workspace volume instead of hardcoded root path
+            disk = psutil.disk_usage(os.getcwd())
             disk_percent = disk.percent
+            free_gb = disk.free / (1024**3)
             
-            if disk_percent >= self.disk_critical_threshold:
+            # Treat as critical only when disk usage is high and free space is low
+            if (
+                disk_percent >= self.disk_critical_threshold
+                and free_gb < self.disk_min_free_critical_gb
+            ):
                 return False, (
                     f"Critical disk space: {disk_percent:.1f}% used. "
-                    f"Free: {disk.free / (1024**3):.2f} GB. "
+                    f"Free: {free_gb:.2f} GB. "
                     "System cannot continue safely. Please free up disk space and try again."
                 )
             
             if disk_percent >= self.disk_warning_threshold:
                 self.logger.warning(
                     f"High disk usage: {disk_percent:.1f}%. "
-                    f"Free: {disk.free / (1024**3):.2f} GB"
+                    f"Free: {free_gb:.2f} GB"
                 )
             
             return True, None
@@ -351,7 +382,7 @@ class GracefulFailureHandler:
         """
         try:
             memory = psutil.virtual_memory()
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage(os.getcwd())
             
             return {
                 'memory': {

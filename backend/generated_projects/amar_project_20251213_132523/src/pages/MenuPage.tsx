@@ -272,7 +272,7 @@ const MenuPage: React.FC = () => {
           marginBottom: '20px',
           textShadow: '1px 1px 2px rgba(0,0,0,0.05)'
         }}>
-          Ready to Order? 🚀
+          Ready to Order? 
         </h2>
         <p style={{
           fontSize: '1.3rem',

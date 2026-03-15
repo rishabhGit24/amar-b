@@ -76,7 +76,7 @@ Then deploy through the web interface.
 ## Expected Output
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 📤 Uploading 15 files to Vercel...
    Skipping vercel.json (not needed for API deployment)
    Skipping netlify.toml (not needed for API deployment)

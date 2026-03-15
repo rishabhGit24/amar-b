@@ -49,7 +49,7 @@ else:
 ### When npm is NOT available:
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 
 ✓ DEPLOYER: Project ready for manual deployment
 
@@ -91,7 +91,7 @@ See deployment instructions above for how to deploy your project.
 ### When npm IS available and deployment succeeds:
 
 ```
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 
 ✓ DEPLOYER: Application deployed successfully
 

@@ -33,7 +33,7 @@ if not kb_dir.exists():
 # Find all markdown files
 print(f"\n[2/4] Scanning knowledge base at {kb_dir}...")
 if not kb_dir.exists():
-    print(f"❌ Knowledge base directory not found: {kb_dir}")
+    print(f"ERROR Knowledge base directory not found: {kb_dir}")
     print("Please ensure knowledge_base directory exists with .md files")
     exit(1)
 
@@ -41,7 +41,7 @@ md_files = list(kb_dir.rglob("*.md"))
 print(f"Found {len(md_files)} documents")
 
 if len(md_files) == 0:
-    print("❌ No markdown files found in knowledge base")
+    print("ERROR No markdown files found in knowledge base")
     exit(1)
 
 # Ingest each file
@@ -66,10 +66,10 @@ for i, file_path in enumerate(md_files, 1):
         }
         
         rag.ingest_document(content, metadata)
-        print(f"  [{i}/{len(md_files)}] ✓ {file_path.name}")
+        print(f"  [{i}/{len(md_files)}] OK {file_path.name}")
         
     except Exception as e:
-        print(f"  [{i}/{len(md_files)}] ✗ {file_path.name}: {e}")
+        print(f"  [{i}/{len(md_files)}] ERROR {file_path.name}: {e}")
 
 elapsed_time = time.time() - start_time
 
@@ -87,5 +87,5 @@ print(f"Total chunks: {len(rag.retriever.chunks)}")
 print(f"Time taken: {elapsed_time:.2f} seconds")
 print(f"Saved to: {output_path}")
 print(f"Index file: {output_path}.index")
-print("\n✅ Knowledge base is ready!")
+print("\nOK Knowledge base is ready!")
 print("="*70)

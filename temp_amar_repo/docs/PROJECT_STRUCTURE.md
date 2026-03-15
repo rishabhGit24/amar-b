@@ -9,7 +9,7 @@ amar-phase1/
 │   ├── evaluation.py             # Evaluation metrics and test suite
 │   └── config.py                 # Configuration settings and parameters
 │
-├── 🚀 Execution Scripts
+├──  Execution Scripts
 │   ├── demo.py                   # Complete end-to-end demonstration
 │   ├── mvp_example.py            # MVP: SQL injection fix example
 │   ├── test_pipeline.py          # Component testing and verification
@@ -44,7 +44,9 @@ amar-phase1/
 ### Core Modules (Python)
 
 #### `rag_retriever.py` (Main Module)
+
 **Classes:**
+
 - `DocumentChunker`: Text chunking and normalization
   - `normalize_text()`: Clean and standardize text
   - `chunk_text()`: Split into 500-token chunks with overlap
@@ -65,7 +67,9 @@ amar-phase1/
 **Dependencies:** faiss, sentence-transformers, tiktoken
 
 #### `ingestion_pipeline.py`
+
 **Classes:**
+
 - `DocumentLoader`: Multi-format document loading
   - `load_txt()`: Plain text files
   - `load_pdf()`: PDF documents
@@ -81,20 +85,25 @@ amar-phase1/
 **Dependencies:** PyPDF2
 
 #### `evaluation.py`
+
 **Classes:**
+
 - `RAGEvaluator`: Quality metrics
   - `calculate_relevance()`: Semantic similarity scoring
   - `evaluate_retrieval()`: Test retrieval quality
   - `evaluate_answer_quality()`: Answer content evaluation
 
 **Functions:**
+
 - `run_evaluation_suite()`: Complete test suite (4 test cases)
 
 **Lines of Code:** ~120
 **Target:** 80%+ relevance
 
 #### `config.py`
+
 **Configuration Sections:**
+
 - Model settings (embedding model, LLM)
 - Chunking parameters (size, overlap)
 - Retrieval settings (top-K, threshold)
@@ -107,8 +116,10 @@ amar-phase1/
 ### Execution Scripts
 
 #### `demo.py`
+
 **Purpose:** Complete demonstration of AMAR Phase 1
 **Steps:**
+
 1. Initialize RAG pipeline
 2. Ingest sample documents
 3. Run test queries
@@ -119,8 +130,10 @@ amar-phase1/
 **Output:** Query results, evaluation metrics
 
 #### `mvp_example.py`
+
 **Purpose:** Demonstrate SQL injection fix capability
 **Output:**
+
 - Vulnerability analysis
 - Code diff/patch
 - Unit tests (Jest)
@@ -131,8 +144,10 @@ amar-phase1/
 **Format:** Structured JSON-like response
 
 #### `test_pipeline.py`
+
 **Purpose:** Verify all components working
 **Tests:**
+
 - Import verification
 - Module loading
 - Document chunking
@@ -143,8 +158,10 @@ amar-phase1/
 **Output:** Pass/fail for each component
 
 #### `colab_setup.py`
+
 **Purpose:** Setup script for Google Colab
 **Actions:**
+
 - Install dependencies
 - Configure API keys
 - Verify installation
@@ -152,18 +169,21 @@ amar-phase1/
 ### Documentation Files
 
 #### `README.md`
+
 - Project overview
 - Architecture summary
 - Key features
 - Target metrics
 
 #### `QUICKSTART.md`
+
 - Installation instructions
 - Quick start guide
 - Usage examples
 - Troubleshooting
 
 #### `ARCHITECTURE.md`
+
 - System architecture diagram
 - Component details
 - Data flow
@@ -171,12 +191,14 @@ amar-phase1/
 - Scalability considerations
 
 #### `LANGCHAIN_INTEGRATION.md`
+
 - Integration guide for Rishab
 - Code examples
 - Multi-agent patterns
 - Production deployment
 
 #### `PROJECT_SUMMARY.md`
+
 - Executive summary
 - Deliverables checklist
 - Performance metrics
@@ -184,6 +206,7 @@ amar-phase1/
 - Team responsibilities
 
 #### `DEPLOYMENT_CHECKLIST.md`
+
 - Pre-deployment tasks
 - Deployment options
 - Post-deployment verification
@@ -193,6 +216,7 @@ amar-phase1/
 ### Configuration Files
 
 #### `requirements.txt`
+
 ```
 faiss-cpu==1.7.4
 sentence-transformers==2.2.2
@@ -205,13 +229,17 @@ PyPDF2==3.0.1
 ```
 
 #### `.env.example`
+
 Template for environment variables:
+
 - GEMINI_API_KEY
 - PINECONE_API_KEY (optional)
 - Model configurations
 
 #### `document_schema.json`
+
 JSON schema for:
+
 - Document metadata
 - Chunk metadata
 - Field definitions
@@ -219,7 +247,9 @@ JSON schema for:
 ### Notebooks
 
 #### `AMAR_Colab_Notebook.md`
+
 18 cells covering:
+
 1. Setup and installation
 2. API key configuration
 3. File upload
@@ -237,6 +267,7 @@ JSON schema for:
 ## Usage Flow
 
 ### First Time Setup
+
 ```bash
 1. Clone repository
 2. pip install -r requirements.txt
@@ -247,6 +278,7 @@ JSON schema for:
 ```
 
 ### Development Workflow
+
 ```bash
 1. python test_pipeline.py  # Test components
 2. Modify code
@@ -256,6 +288,7 @@ JSON schema for:
 ```
 
 ### Production Deployment
+
 ```bash
 1. Review DEPLOYMENT_CHECKLIST.md
 2. Set up production environment
@@ -335,13 +368,13 @@ demo.py
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
+| Task    | Command                           |
+| ------- | --------------------------------- |
 | Install | `pip install -r requirements.txt` |
-| Test | `python test_pipeline.py` |
-| Demo | `python demo.py` |
-| MVP | `python mvp_example.py` |
-| Colab | Open `AMAR_Colab_Notebook.md` |
+| Test    | `python test_pipeline.py`         |
+| Demo    | `python demo.py`                  |
+| MVP     | `python mvp_example.py`           |
+| Colab   | Open `AMAR_Colab_Notebook.md`     |
 
 ## Next Steps
 

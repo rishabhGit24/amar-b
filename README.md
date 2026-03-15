@@ -12,7 +12,7 @@
 - **Self-Healing**: Automatic retry on failures (up to 3 attempts)
 - **Production-Ready**: Complete error handling and resource management
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 

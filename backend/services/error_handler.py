@@ -378,20 +378,36 @@ class ErrorHandler:
             # Check memory usage
             memory = psutil.virtual_memory()
             memory_percent = memory.percent
+            memory_available_gb = memory.available / (1024**3)
             
-            if memory_percent > 95:
-                return False, f"Critical memory usage: {memory_percent}%. System may be unstable."
+            # Only critical if both pressure and low absolute free memory are present
+            if memory_percent > 95 and memory_available_gb < 1.0:
+                return False, (
+                    f"Critical memory usage: {memory_percent:.1f}% "
+                    f"(available: {memory_available_gb:.2f} GB). System may be unstable."
+                )
             elif memory_percent > 85:
-                self.logger.warning(f"High memory usage: {memory_percent}%")
+                self.logger.warning(
+                    f"High memory usage: {memory_percent:.1f}% "
+                    f"(available: {memory_available_gb:.2f} GB)"
+                )
             
             # Check disk space
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage(os.getcwd())
             disk_percent = disk.percent
+            disk_free_gb = disk.free / (1024**3)
             
-            if disk_percent > 95:
-                return False, f"Critical disk space: {disk_percent}% used. Cannot continue operations."
+            # Only critical if both high usage and low free space are present
+            if disk_percent > 95 and disk_free_gb < 5.0:
+                return False, (
+                    f"Critical disk space: {disk_percent:.1f}% used "
+                    f"(free: {disk_free_gb:.2f} GB). Cannot continue operations."
+                )
             elif disk_percent > 85:
-                self.logger.warning(f"High disk usage: {disk_percent}%")
+                self.logger.warning(
+                    f"High disk usage: {disk_percent:.1f}% "
+                    f"(free: {disk_free_gb:.2f} GB)"
+                )
             
             return True, None
             

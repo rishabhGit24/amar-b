@@ -99,7 +99,7 @@ Input: "Build a landing page about AI"
 ✓ BUILDER: Generated 20 files successfully
 📁 Files saved to: R:\StartUp\New folder (2)\backend\generated_projects\amar_project_YYYYMMDD_HHMMSS
 
-🚀 DEPLOYER: Deploying application to hosting platform
+ DEPLOYER: Deploying application to hosting platform
 
 📁 Your project files are ready at:
 R:\StartUp\New folder (2)\backend\generated_projects\amar_project_YYYYMMDD_HHMMSS
@@ -279,4 +279,4 @@ Your AMAR system now generates production-ready React apps that:
 - Include clear deployment instructions
 - Work on Vercel/Netlify without issues
 
-**Ready to test? Restart your server and generate a project!** 🚀
+**Ready to test? Restart your server and generate a project!**

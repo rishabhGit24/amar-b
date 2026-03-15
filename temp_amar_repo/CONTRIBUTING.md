@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to AMAR! This document provides guidelines for contributing to the project.
 
-## 🚀 Getting Started
+## Getting Started
 
 1. **Fork the repository**
 2. **Clone your fork**
@@ -23,11 +23,13 @@ Thank you for your interest in contributing to AMAR! This document provides guid
 ## 🔧 Development Setup
 
 ### Prerequisites
+
 - Python 3.8+
 - Git
 - Gemini API key
 
 ### Installation
+
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -43,6 +45,7 @@ python -m pytest tests/
 ## 📝 How to Contribute
 
 ### Reporting Bugs
+
 - Use GitHub Issues
 - Include detailed description
 - Provide steps to reproduce
@@ -50,6 +53,7 @@ python -m pytest tests/
 - Add relevant logs/screenshots
 
 ### Suggesting Features
+
 - Use GitHub Issues with "enhancement" label
 - Describe the feature clearly
 - Explain use cases
@@ -58,6 +62,7 @@ python -m pytest tests/
 ### Code Contributions
 
 1. **Create a branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -69,18 +74,21 @@ python -m pytest tests/
    - Keep commits focused and clear
 
 3. **Test your changes**
+
    ```bash
    python -m pytest tests/
    python evaluation.py
    ```
 
 4. **Commit your changes**
+
    ```bash
    git add .
    git commit -m "feat: add your feature description"
    ```
 
 5. **Push to your fork**
+
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -93,6 +101,7 @@ python -m pytest tests/
 ## 📋 Code Style
 
 ### Python
+
 - Follow PEP 8
 - Use meaningful variable names
 - Add docstrings to functions
@@ -100,14 +109,15 @@ python -m pytest tests/
 - Use type hints where appropriate
 
 ### Example
+
 ```python
 def calculate_confidence(scores: List[float]) -> float:
     """
     Calculate confidence score from similarity scores.
-    
+
     Args:
         scores: List of similarity scores
-        
+
     Returns:
         Confidence score between 0 and 1
     """
@@ -117,6 +127,7 @@ def calculate_confidence(scores: List[float]) -> float:
 ```
 
 ### Documentation
+
 - Update README.md for major changes
 - Add/update docs in `docs/` folder
 - Include code examples
@@ -125,6 +136,7 @@ def calculate_confidence(scores: List[float]) -> float:
 ## 🧪 Testing
 
 ### Running Tests
+
 ```bash
 # All tests
 python -m pytest tests/
@@ -137,6 +149,7 @@ python -m pytest --cov=. tests/
 ```
 
 ### Writing Tests
+
 - Add tests for new features
 - Test edge cases
 - Use descriptive test names
@@ -145,12 +158,14 @@ python -m pytest --cov=. tests/
 ## 📚 Documentation
 
 ### Adding Documentation
+
 1. Create markdown file in `docs/`
 2. Follow existing format
 3. Update `docs/INDEX.md`
 4. Link from README.md if relevant
 
 ### Documentation Style
+
 - Use clear headings
 - Include code examples
 - Add screenshots if helpful
@@ -159,6 +174,7 @@ python -m pytest --cov=. tests/
 ## 🎯 Areas for Contribution
 
 ### High Priority
+
 - [ ] Additional LLM integrations (OpenAI, Anthropic)
 - [ ] More knowledge base documents
 - [ ] Performance optimizations
@@ -166,6 +182,7 @@ python -m pytest --cov=. tests/
 - [ ] Better error handling
 
 ### Medium Priority
+
 - [ ] Web UI for interactive queries
 - [ ] API server implementation
 - [ ] Docker containerization
@@ -173,6 +190,7 @@ python -m pytest --cov=. tests/
 - [ ] More comprehensive tests
 
 ### Low Priority
+
 - [ ] Additional language support
 - [ ] Plugin system
 - [ ] Advanced analytics
@@ -207,6 +225,7 @@ python -m pytest --cov=. tests/
 ## 📜 Commit Message Guidelines
 
 ### Format
+
 ```
 type(scope): subject
 
@@ -216,6 +235,7 @@ footer
 ```
 
 ### Types
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation
@@ -225,6 +245,7 @@ footer
 - `chore`: Maintenance
 
 ### Examples
+
 ```bash
 feat(rag): add support for custom embeddings
 fix(export): handle empty query results
@@ -234,6 +255,7 @@ docs(readme): update installation instructions
 ## 🤝 Code of Conduct
 
 ### Our Standards
+
 - Be respectful and inclusive
 - Welcome newcomers
 - Accept constructive criticism
@@ -241,6 +263,7 @@ docs(readme): update installation instructions
 - Show empathy towards others
 
 ### Unacceptable Behavior
+
 - Harassment or discrimination
 - Trolling or insulting comments
 - Personal or political attacks
@@ -257,6 +280,7 @@ docs(readme): update installation instructions
 ## 🙏 Recognition
 
 Contributors will be:
+
 - Listed in CONTRIBUTORS.md
 - Mentioned in release notes
 - Credited in documentation
@@ -267,4 +291,4 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ---
 
-Thank you for contributing to AMAR! 🚀
+Thank you for contributing to AMAR!

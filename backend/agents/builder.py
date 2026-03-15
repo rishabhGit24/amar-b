@@ -1,4 +1,4 @@
-"""
+﻿"""
 Builder Agent for AMAR MVP
 Generates React code based on plans from Planner Agent using Gemini LLM
 Validates: Requirements 3.1, 3.2, 12.4
@@ -21,8 +21,14 @@ from models.core import (
     Plan, GeneratedProject, TestResults, AgentResponse, 
     FileLineage, AuditLogEntry, PageSpec, ComponentSpec, BackendSpec
 )
+from services.gemini_model_utils import (
+    build_gemini_model_candidates,
+    normalize_gemini_model_name,
+    should_fallback_to_next_model,
+)
 from services.memory import memory_manager
 from services.rate_limiter import get_rate_limiter, RateLimitExceeded, ExponentialBackoff
+from services.system_prompt_loader import load_system_prompt
 from config import get_settings
 
 
@@ -69,6 +75,13 @@ class BuilderAgent:
             base_delay=1.0,
             max_retries=self.settings.max_retry_attempts
         )
+        self.llm_calls_attempted = 0
+        self.llm_calls_succeeded = 0
+        self.template_fallback_count = 0
+        self.last_llm_model_used: Optional[str] = None
+        self.use_custom_client = False
+        self.gemini_model_candidates: List[str] = []
+        self.current_gemini_model_index = 0
         
         # Initialize LLM client (OpenAI, Groq, or Gemini)
         if self.settings.use_openai and self.settings.openai_api_key:
@@ -85,27 +98,57 @@ class BuilderAgent:
                 if not self.settings.gemini_api_key:
                     raise ValueError("No API key configured. Set OPENAI_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY")
                 
-                # Use configured model or fallback to gemini-2.5-flash-lite
-                model_name = self.settings.gemini_model or "gemini-2.5-flash-lite"
-                # Use LangChain's default retry mechanism
-                self.llm = ChatGoogleGenerativeAI(
-                    model=model_name,
-                    google_api_key=self.settings.gemini_api_key,
-                    temperature=0.1,
-                    max_tokens=8000,
-                    timeout=90
+                configured_model = normalize_gemini_model_name(
+                    self.settings.gemini_model or "gemini-2.5-pro"
                 )
+                self.gemini_model_candidates = build_gemini_model_candidates(configured_model)
+
+                self._initialize_gemini_llm(self.gemini_model_candidates[0])
                 self.use_custom_client = False
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize LLM client: {str(e)}")
+
+    def _initialize_gemini_llm(self, model_name: str) -> None:
+        """Initialize Gemini LLM with the given model."""
+        self.llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=self.settings.gemini_api_key,
+            temperature=0.1,
+            max_tokens=8000,
+            timeout=90
+        )
     
     def _call_llm(self, prompt: str, temperature: float = 0.1, max_tokens: int = 8000) -> str:
         """Helper method to call LLM (OpenAI, Groq, or Gemini)"""
+        self.llm_calls_attempted += 1
         if self.use_custom_client:
-            return self.llm_client.generate_content(prompt, temperature=temperature, max_tokens=max_tokens)
-        else:
-            response = self.llm.invoke(prompt)
-            return response.content
+            self.last_llm_model_used = "custom_client"
+            result = self.llm_client.generate_content(prompt, temperature=temperature, max_tokens=max_tokens)
+            self.llm_calls_succeeded += 1
+            return result
+
+        last_error: Optional[Exception] = None
+        for idx in range(self.current_gemini_model_index, len(self.gemini_model_candidates)):
+            model_name = self.gemini_model_candidates[idx]
+            if idx != self.current_gemini_model_index:
+                self.current_gemini_model_index = idx
+                self._initialize_gemini_llm(model_name)
+                print(f"Builder switched Gemini model to: {model_name}")
+            try:
+                response = self.llm.invoke(prompt)
+                self.last_llm_model_used = model_name
+                self.llm_calls_succeeded += 1
+                return response.content
+            except Exception as e:
+                last_error = e
+                if not should_fallback_to_next_model(str(e)):
+                    raise
+                print(f"Builder Gemini model '{model_name}' failed; trying next candidate. Error: {str(e)[:180]}")
+                continue
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("LLM call failed with unknown error")
     
     def generate_project(self, plan: Plan, session_id: str) -> AgentResponse:
         """
@@ -121,19 +164,23 @@ class BuilderAgent:
         Validates: Requirements 3.1, 3.2, 12.4
         """
         start_time = datetime.now()
+        self.llm_calls_attempted = 0
+        self.llm_calls_succeeded = 0
+        self.template_fallback_count = 0
+        self.last_llm_model_used = None
         
         try:
             # Log builder agent start
-            print(f"🔨 BUILDER: Starting code generation for {len(plan.pages)} page(s) and {len(plan.components)} component(s)")
+            print(f"ðŸ”¨ BUILDER: Starting code generation for {len(plan.pages)} page(s) and {len(plan.components)} component(s)")
             
             # Get memory context for this session
             memory = memory_manager.get_memory(session_id)
             context = memory.get_context_for_agent('builder', max_entries=3)
             
             # Generate project files using LLM
-            print(f"🔨 BUILDER: Generating project files...")
+            print(f"ðŸ”¨ BUILDER: Generating project files...")
             generated_files = self._generate_project_files(plan, context, session_id)
-            print(f"✓ BUILDER: Generated {len(generated_files)} files successfully")
+            print(f"âœ“ BUILDER: Generated {len(generated_files)} files successfully")
             
             # Create file lineage tracking
             lineage = self._create_file_lineage(generated_files, session_id)
@@ -177,13 +224,21 @@ class BuilderAgent:
             
             execution_time = int((datetime.now() - start_time).total_seconds() * 1000)
             
-            print(f"✓ BUILDER: Code generation completed in {execution_time}ms")
-            print(f"✓ BUILDER: Total files generated: {len(generated_files)}")
+            print(f"âœ“ BUILDER: Code generation completed in {execution_time}ms")
+            print(f"âœ“ BUILDER: Total files generated: {len(generated_files)}")
             
             return AgentResponse(
                 agent_name='builder',
                 success=True,
-                output={'project': project.model_dump()},
+                output={
+                    'project': project.model_dump(),
+                    'llm_stats': {
+                        'attempted': self.llm_calls_attempted,
+                        'succeeded': self.llm_calls_succeeded,
+                        'template_fallback_count': self.template_fallback_count,
+                        'last_model_used': self.last_llm_model_used,
+                    }
+                },
                 errors=[],
                 execution_time_ms=execution_time
             )
@@ -211,57 +266,57 @@ class BuilderAgent:
         files = {}
         
         # Generate package.json
-        print(f"🔨 BUILDER: Generating package.json...")
+        print(f"ðŸ”¨ BUILDER: Generating package.json...")
         files['package.json'] = self._generate_package_json(plan)
-        print(f"  ✓ Generated: package.json")
+        print(f"  âœ“ Generated: package.json")
         
         # Generate main App.tsx with routing
-        print(f"🔨 BUILDER: Generating core files (App.tsx, index.tsx, CSS)...")
+        print(f"ðŸ”¨ BUILDER: Generating core files (App.tsx, index.tsx, CSS)...")
         files['src/App.tsx'] = self._generate_app_component(plan)
-        print(f"  ✓ Generated: src/App.tsx")
+        print(f"  âœ“ Generated: src/App.tsx")
         
         # Generate index.tsx entry point
         files['src/index.tsx'] = self._generate_index_file()
-        print(f"  ✓ Generated: src/index.tsx")
+        print(f"  âœ“ Generated: src/index.tsx")
         
         # Generate CSS files
         files['src/index.css'] = self._generate_index_css()
         files['src/App.css'] = self._generate_app_css()
-        print(f"  ✓ Generated: CSS files")
+        print(f"  âœ“ Generated: CSS files")
         
         # Generate page components
         if plan.pages:
-            print(f"🔨 BUILDER: Generating {len(plan.pages)} page component(s)...")
+            print(f"ðŸ”¨ BUILDER: Generating {len(plan.pages)} page component(s)...")
             for i, page in enumerate(plan.pages, 1):
                 page_file_path = f"src/pages/{page.name}.tsx"
                 print(f"  [{i}/{len(plan.pages)}] Generating page: {page.name}...")
                 files[page_file_path] = self._generate_page_component(page, plan, session_id)
-                print(f"  ✓ Generated: {page_file_path}")
+                print(f"  âœ“ Generated: {page_file_path}")
         
         # Generate shared components
         if plan.components:
-            print(f"🔨 BUILDER: Generating {len(plan.components)} shared component(s)...")
+            print(f"ðŸ”¨ BUILDER: Generating {len(plan.components)} shared component(s)...")
             for i, component in enumerate(plan.components, 1):
                 component_file_path = f"src/components/{component.name}.tsx"
                 print(f"  [{i}/{len(plan.components)}] Generating component: {component.name}...")
                 files[component_file_path] = self._generate_component(component, plan, session_id)
-                print(f"  ✓ Generated: {component_file_path}")
+                print(f"  âœ“ Generated: {component_file_path}")
         
         # Generate backend logic if specified
         if plan.backend_logic:
-            print(f"🔨 BUILDER: Generating backend files...")
+            print(f"ðŸ”¨ BUILDER: Generating backend files...")
             backend_files = self._generate_backend_files(plan.backend_logic)
             files.update(backend_files)
-            print(f"✓ BUILDER: Generated {len(backend_files)} backend file(s)")
+            print(f"âœ“ BUILDER: Generated {len(backend_files)} backend file(s)")
         
         # Generate basic test files (optional - skip if it causes issues)
         try:
-            print(f"🔨 BUILDER: Generating test files...")
+            print(f"ðŸ”¨ BUILDER: Generating test files...")
             files['src/App.test.tsx'] = self._generate_app_test()
             files['src/setupTests.ts'] = self._generate_setup_tests()
-            print(f"  ✓ Generated: src/App.test.tsx, src/setupTests.ts")
+            print(f"  âœ“ Generated: src/App.test.tsx, src/setupTests.ts")
         except Exception as e:
-            print(f"  ⚠️  Warning: Test file generation skipped: {e}")
+            print(f"  âš ï¸  Warning: Test file generation skipped: {e}")
             # Generate minimal test file as fallback
             files['src/App.test.tsx'] = """import React from 'react';
 import { render } from '@testing-library/react';
@@ -273,36 +328,36 @@ test('renders app without crashing', () => {
 """
         
         # Generate README
-        print(f"🔨 BUILDER: Generating README.md...")
+        print(f"ðŸ”¨ BUILDER: Generating README.md...")
         files['README.md'] = self._generate_readme(plan)
-        print(f"  ✓ Generated: README.md")
+        print(f"  âœ“ Generated: README.md")
         
         # Generate public directory files (required for react-scripts build)
-        print(f"🔨 BUILDER: Generating public directory files...")
+        print(f"ðŸ”¨ BUILDER: Generating public directory files...")
         files['public/index.html'] = self._generate_index_html(plan)
         files['public/manifest.json'] = self._generate_manifest_json(plan)
-        print(f"  ✓ Generated: public/index.html, public/manifest.json")
+        print(f"  âœ“ Generated: public/index.html, public/manifest.json")
         
         # Generate .gitignore file
-        print(f"🔨 BUILDER: Generating .gitignore...")
+        print(f"ðŸ”¨ BUILDER: Generating .gitignore...")
         files['.gitignore'] = self._generate_gitignore()
-        print(f"  ✓ Generated: .gitignore")
+        print(f"  âœ“ Generated: .gitignore")
         
         # Generate TypeScript configuration
-        print(f"🔨 BUILDER: Generating tsconfig.json...")
+        print(f"ðŸ”¨ BUILDER: Generating tsconfig.json...")
         files['tsconfig.json'] = self._generate_tsconfig()
-        print(f"  ✓ Generated: tsconfig.json")
+        print(f"  âœ“ Generated: tsconfig.json")
         
         # Generate deployment configuration files
-        print(f"🔨 BUILDER: Generating deployment config files...")
+        print(f"ðŸ”¨ BUILDER: Generating deployment config files...")
         files['vercel.json'] = self._generate_vercel_config()
         files['netlify.toml'] = self._generate_netlify_config()
         files['.npmrc'] = self._generate_npmrc()
-        print(f"  ✓ Generated: vercel.json, netlify.toml, .npmrc")
+        print(f"  âœ“ Generated: vercel.json, netlify.toml, .npmrc")
         
         # CRITICAL: Apply auto-correction to ALL TypeScript/TSX files before returning
         # This ensures array type errors are fixed even if they weren't caught earlier
-        print(f"🔨 BUILDER: Applying code corrections to all TypeScript files...")
+        print(f"ðŸ”¨ BUILDER: Applying code corrections to all TypeScript files...")
         corrected_count = 0
         for file_path, file_content in files.items():
             if file_path.endswith(('.tsx', '.ts')) and isinstance(file_content, str):
@@ -311,13 +366,13 @@ test('renders app without crashing', () => {
                 import re
                 has_array_type = bool(re.search(r':\s*array\s*;', original_content, re.IGNORECASE))
                 if has_array_type:
-                    print(f"  ⚠️  Found 'array' type in {file_path}, applying correction...")
+                    print(f"  âš ï¸  Found 'array' type in {file_path}, applying correction...")
                 
                 corrected_content = self._auto_correct_code_errors(file_content)
                 if original_content != corrected_content:
                     files[file_path] = corrected_content
                     corrected_count += 1
-                    print(f"  ✓ Auto-corrected: {file_path}")
+                    print(f"  âœ“ Auto-corrected: {file_path}")
                 elif has_array_type:
                     # If we detected array but correction didn't change anything, try more aggressive fix
                     corrected_content = re.sub(
@@ -329,12 +384,12 @@ test('renders app without crashing', () => {
                     if corrected_content != original_content:
                         files[file_path] = corrected_content
                         corrected_count += 1
-                        print(f"  ✓ Auto-corrected (aggressive): {file_path}")
+                        print(f"  âœ“ Auto-corrected (aggressive): {file_path}")
         
         if corrected_count > 0:
-            print(f"  ✓ Applied corrections to {corrected_count} file(s)")
+            print(f"  âœ“ Applied corrections to {corrected_count} file(s)")
         else:
-            print(f"  ✓ All TypeScript files validated (no corrections needed)")
+            print(f"  âœ“ All TypeScript files validated (no corrections needed)")
         
         return files
     
@@ -441,32 +496,61 @@ test('renders app without crashing', () => {
         return json.dumps(package_json, indent=2)
     
     def _generate_app_component(self, plan: Plan) -> str:
-        """Generate main App.tsx component with routing"""
+        """Generate main App.tsx component with MUI ThemeProvider and routing"""
         # Generate imports for all pages
         page_imports = []
         routes = []
         
         for page in plan.pages:
             page_imports.append(f"import {page.name} from './pages/{page.name}';")
-            routes.append(f'        <Route path="{page.route}" element={{<{page.name} />}} />')
+            routes.append(f'          <Route path="{page.route}" element={{<{page.name} />}} />')
         
         imports_str = '\n'.join(page_imports)
         routes_str = '\n'.join(routes)
         
         app_component = f"""import React from 'react';
 import {{ BrowserRouter as Router, Routes, Route }} from 'react-router-dom';
-import './App.css';
+import {{ createTheme, ThemeProvider }} from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 {imports_str}
+
+const theme = createTheme({{
+  palette: {{
+    mode: 'light',
+    primary: {{
+      main: '#667eea',
+      light: '#a5b4fc',
+      dark: '#4c51bf',
+    }},
+    secondary: {{
+      main: '#f59e0b',
+      light: '#fbbf24',
+      dark: '#d97706',
+    }},
+    background: {{
+      default: '#f8fafc',
+      paper: '#ffffff',
+    }},
+  }},
+  typography: {{
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h1: {{ fontSize: '3.5rem', fontWeight: 700 }},
+    h2: {{ fontSize: '2.5rem', fontWeight: 600 }},
+    button: {{ textTransform: 'none', fontWeight: 600 }},
+  }},
+  shape: {{ borderRadius: 12 }},
+}});
 
 function App() {{
   return (
-    <Router>
-      <div className="App">
+    <ThemeProvider theme={{theme}}>
+      <CssBaseline />
+      <Router>
         <Routes>
 {routes_str}
         </Routes>
-      </div>
-    </Router>
+      </Router>
+    </ThemeProvider>
   );
 }}
 
@@ -583,7 +667,7 @@ code {
     
     def _generate_page_component(self, page: PageSpec, plan: Plan, session_id: str) -> str:
         """
-        Generate individual page component using LLM
+        Generate individual page component using LLM with MUI validation
         
         Uses exponential backoff for retries on rate limit errors.
         
@@ -609,14 +693,28 @@ code {
         # Call LLM directly - let LangChain handle retries naturally
         try:
             response_text = self._call_llm(prompt)
-            return self._extract_code_from_response(response_text)
+            generated_code = self._extract_code_from_response(response_text)
+            
+            # Validate MUI compliance (safe fallback if validator is unavailable)
+            mui_validator = getattr(self, '_validate_mui_compliance', None)
+            if callable(mui_validator) and mui_validator(generated_code, 'page'):
+                return generated_code
+            else:
+                regen = getattr(self, '_regenerate_with_stricter_prompt', None)
+                if callable(regen):
+                    return regen(generated_code, 'page', page, plan, session_id)
+                self.template_fallback_count += 1
+                return self._generate_basic_page_template(page)
+                
         except Exception as e:
-            # Fallback to template if LLM call fails
+            print(f" Page generation failed: {e}, using MUI fallback template")
+            # Fallback to MUI template if LLM call fails
+            self.template_fallback_count += 1
             return self._generate_basic_page_template(page)
     
     def _generate_component(self, component: ComponentSpec, plan: Plan, session_id: str) -> str:
         """
-        Generate individual component using LLM
+        Generate individual component using LLM with MUI validation
         
         Uses exponential backoff for retries on rate limit errors.
         
@@ -634,7 +732,8 @@ code {
             prompt = self._create_component_generation_prompt(component, plan)
         except Exception as e:
             # If prompt generation fails, use fallback template
-            print(f"  ⚠️  Warning: Prompt generation failed, using template: {e}")
+            print(f"  âš ï¸  Warning: Prompt generation failed, using MUI template: {e}")
+            self.template_fallback_count += 1
             return self._generate_basic_component_template(component)
         
         try:
@@ -647,10 +746,23 @@ code {
         # Call LLM directly - let LangChain handle retries naturally
         try:
             response_text = self._call_llm(prompt)
-            return self._extract_code_from_response(response_text)
+            generated_code = self._extract_code_from_response(response_text)
+            
+            # Validate MUI compliance (safe fallback if validator is unavailable)
+            mui_validator = getattr(self, '_validate_mui_compliance', None)
+            if callable(mui_validator) and mui_validator(generated_code, 'component'):
+                return generated_code
+            else:
+                regen = getattr(self, '_regenerate_with_stricter_prompt', None)
+                if callable(regen):
+                    return regen(generated_code, 'component', component, plan, session_id)
+                self.template_fallback_count += 1
+                return self._generate_basic_component_template(component)
+                
         except Exception as e:
-            # Fallback to template if LLM call fails
-            print(f"  ⚠️  Warning: LLM call failed, using template: {e}")
+            # Fallback to MUI template if LLM call fails
+            print(f"  âš ï¸  Warning: LLM call failed, using MUI template: {e}")
+            self.template_fallback_count += 1
             return self._generate_basic_component_template(component)
     
     def _create_page_generation_prompt(self, page: PageSpec, plan: Plan) -> str:
@@ -659,24 +771,24 @@ code {
         
         Validates: Requirements 13.3
         """
-        # Get RAG service to retrieve system prompt
-        from services.rag_service import get_rag_service
-        rag_service = get_rag_service()
-        
-        # Try to get comprehensive system prompt from knowledge base
-        system_prompt = ""
-        if rag_service.is_enabled:
-            try:
-                # Query for builder agent system prompt
-                rag_result = _run_async_in_thread(rag_service.retrieve_context(
-                    "builder agent system prompt comprehensive instructions styling requirements",
-                    top_k=1
-                ))
-                if rag_result and rag_result.get('retrieved_docs'):
-                    system_prompt = rag_result['retrieved_docs'][0]['content']
-                    print(f"✓ Loaded comprehensive builder system prompt from RAG ({len(system_prompt)} chars)")
-            except Exception as e:
-                print(f"⚠️ Failed to load builder system prompt from RAG: {e}")
+        # Prefer deterministic local builder prompt; fallback to RAG.
+        system_prompt = load_system_prompt("builder_agent_comprehensive_prompt.md") or ""
+        if system_prompt:
+            print(f"Loaded builder system prompt from file ({len(system_prompt)} chars)")
+        else:
+            from services.rag_service import get_rag_service
+            rag_service = get_rag_service()
+            if rag_service.is_enabled:
+                try:
+                    rag_result = _run_async_in_thread(rag_service.retrieve_context(
+                        "builder agent system prompt comprehensive instructions styling requirements",
+                        top_k=1
+                    ))
+                    if rag_result and rag_result.get('retrieved_docs'):
+                        system_prompt = rag_result['retrieved_docs'][0]['content']
+                        print(f"Loaded builder system prompt from RAG ({len(system_prompt)} chars)")
+                except Exception as e:
+                    print(f"Failed to load builder system prompt from RAG: {e}")
         
         # Validate page attributes
         if not page:
@@ -748,174 +860,79 @@ const handleSubmit = async (data: FormData) => {{
         # Generate example imports for clarity (NO extensions for TypeScript 4.9.5)
         example_imports = '\n'.join([f"import {comp} from '../components/{comp}';" for comp in components_list])
         
-        # Use RAG system prompt if available, otherwise fallback
-        if system_prompt:
-            # Use comprehensive system prompt from RAG
-            prompt = f"""
-PRODUCTION DEPLOYMENT CONTEXT:
-This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
-This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
-The application will be used by real users, so code quality, error handling, and user experience are CRITICAL.
-
+        # Use concise prompt contract to keep generations deterministic and token-efficient
+        prompt = f"""
 {system_prompt}
 
-CURRENT TASK:
-Generate a BEAUTIFUL, PRODUCTION-READY React TypeScript page component.
+PAGE GENERATION TASK
+- Generate ONE complete TSX page file for: {page.name}
+- Route: {page.route}
+- Purpose: {page.description}
+- Must compose these shared components when relevant: {', '.join(components_list) if components_list else 'none'}
 
-Page: {page.name} | Route: {page.route}
-Description: {page.description}
-Components to use: {', '.join(components_list)}
-
-IMPORTANT: Component Usage Guidelines
-- These components are already generated and have specific prop interfaces
-- Use components WITHOUT props first: <ComponentName />
-- If you need to pass props, only pass props that exist in the component's interface
-- When in doubt, use components without props - they work standalone
-
-{backend_info}
-
-EXACT IMPORTS TO USE:
+MANDATORY IMPORTS:
 ```typescript
 import React from 'react';
+import {{ Box, Container, Typography, Button, Card, CardContent, Grid, Stack }} from '@mui/material';
+import {{ ArrowForward, Star, Speed, Security }} from '@mui/icons-material';
 {example_imports}
 ```
 
-1. HERO SECTION:
-```typescript
-<div style={{
-  display: 'flex',
-  flexDirection: 'column' as const,
-  justifyContent: 'center' as const,
-  alignItems: 'center' as const
-}}>
-  <h1 style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '24px', textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}>
-    Amazing Title
-  </h1>
-  <p style={{ fontSize: '1.5rem', maxWidth: '700px', lineHeight: '1.8', opacity: 0.95 }}>
-    Compelling description that engages users
-  </p>
-</div>
-```
+MANDATORY COMPONENT REPLACEMENTS:
+ FORBIDDEN: <div>, <h1>, <p>, <button>, <form>, <input>
+ REQUIRED: <Box>, <Typography variant="h1">, <Typography variant="body1">, <Button>, <TextField>
 
-2. CONTENT SECTIONS:
-```typescript
-<section style={{
-  padding: '80px 20px',
-  maxWidth: '1200px',
-  margin: '0 auto',
-  background: '#ffffff'
-}}>
-  <h2 style={{ 
-    fontSize: '3rem', 
-    textAlign: 'center' as const, 
-    marginBottom: '60px',
-    color: '#2d3748',
-    fontWeight: 'bold'
-  }}>
-    Section Title
-  </h2>
-  <div style={{ 
-    display: 'grid', 
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
-    gap: '40px' 
-  }}>
-    {{/* Content cards */}}
-  </div>
-</section>
-```
+MANDATORY STRUCTURE:
+1. Hero section with clear value proposition and CTA.
+2. Content sections that satisfy the page purpose.
+3. Responsive layout and accessibility-safe interactions.
+4. Professional copy; no placeholders.
 
-3. FEATURE CARDS:
-```typescript
-<div style={{
-  background: 'white',
-  padding: '40px',
-  borderRadius: '20px',
-  boxShadow: '0 20px 60px rgba(0,0,0,0.1)',
-  transition: 'all 0.3s ease',
-  border: '1px solid #e2e8f0',
-  height: '100%'
-}}>
-  <div style={{ 
-    width: '60px', 
-    height: '60px', 
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    borderRadius: '15px',
-    marginBottom: '20px',
-    display: 'flex',
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const
-  }}>
-    <span style={{ fontSize: '2rem' }}>🚀</span>
-  </div>
-  <h3 style={{ fontSize: '1.8rem', color: '#2d3748', marginBottom: '16px', fontWeight: '600' }}>
-    Feature Title
-  </h3>
-  <p style={{ color: '#718096', fontSize: '1.1rem', lineHeight: '1.8' }}>
-    Detailed feature description with real content
-  </p>
-</div>
-```
+PROPS INTERFACE MATCHING (CRITICAL):
+- For every imported component usage, only pass props that are explicitly defined for that component in the plan.
+- If a prop is not explicitly defined in the component spec, do NOT pass it.
+- Safe fallback: render the component without props (example: <ComponentName />).
+- Never invent ad-hoc props during page generation.
 
-4. BUTTONS:
+EXAMPLE HERO SECTION:
 ```typescript
-<button style={{
+<Box sx={{{{
   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   color: 'white',
-  padding: '18px 48px',
-  fontSize: '1.2rem',
-  fontWeight: '600',
-  border: 'none',
-  borderRadius: '50px',
-  cursor: 'pointer',
-  boxShadow: '0 10px 30px rgba(102, 126, 234, 0.4)',
-  transition: 'all 0.3s ease',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '1px'
-}}>
-  Get Started
-</button>
+  py: 12,
+  textAlign: 'center'
+}}}}>
+  <Container maxWidth="lg">
+    <Typography variant="h1" sx={{{{ mb: 3, fontWeight: 700 }}}}>
+      Revolutionary Platform
+    </Typography>
+    <Typography variant="h5" sx={{{{ mb: 4, opacity: 0.9, maxWidth: '600px', mx: 'auto' }}}}>
+      Transform your business with our cutting-edge solution that delivers exceptional results
+    </Typography>
+    <Button 
+      variant="contained" 
+      size="large" 
+      endIcon={{<ArrowForward />}}
+      sx={{{{ px: 4, py: 1.5, fontSize: '1.1rem', bgcolor: 'secondary.main' }}}}
+    >
+      Get Started Today
+    </Button>
+  </Container>
+</Box>
 ```
 
-═══════════════════════════════════════════════════════════════════════════════
-📝 CONTENT REQUIREMENTS:
-═══════════════════════════════════════════════════════════════════════════════
+{backend_info}
 
-- Write REAL, engaging content (NO "Lorem ipsum"!)
-- Multiple sections (Hero, Features, Benefits, CTA)
-- Use emojis for visual interest (🚀 💡 ⭐ 🎯 ✨)
-- Descriptive headings and subheadings
-- Compelling copy that matches the page description
-- Professional tone
+VALIDATION CHECKLIST:
+- [ ] All imports from @mui/material or @mui/icons-material
+- [ ] No plain HTML elements (div, h1, p, button, etc.)
+- [ ] Rich content with useful business detail
+- [ ] Colorful, professional design with gradients
+- [ ] sx prop used for styling
+- [ ] Proper TypeScript interfaces
+- [ ] No template literals/backticks in code
 
-═══════════════════════════════════════════════════════════════════════════════
-⚛️ REACT & TYPESCRIPT:
-═══════════════════════════════════════════════════════════════════════════════
-
-- Use React.FC type
-- Proper TypeScript (no 'any')
-- Modern hooks if needed
-- Clean, readable code
-{"- API integration with loading/error states" if backend_info else ""}
-
-═══════════════════════════════════════════════════════════════════════════════
-🚫 CRITICAL RULES - NEVER BREAK THESE:
-═══════════════════════════════════════════════════════════════════════════════
-
-1. ✅ Import from '../components/Name' (NO .tsx extension - TypeScript 4.9.5 resolves automatically)
-2. ✅ Use inline styles with modern gradients and shadows
-3. ✅ Add real, meaningful content
-4. ✅ Make it visually stunning
-5. ❌ NEVER redefine imported components
-6. ❌ NEVER use boring, plain styles
-7. ❌ NEVER use placeholder content
-8. ❌ NEVER include .tsx extension in imports (TypeScript 4.9.5 resolves automatically)
-9. ❌ NEVER pass props that don't exist in component interface (causes TypeScript build errors!)
-10. ✅ Use correct component for correct purpose (MenuItem for items, MenuSection for sections)
-11. ✅ If unsure about props, use component without props: <ComponentName />
-
-Return ONLY the complete TypeScript React component code.
-NO explanations. NO markdown. NO comments about file locations.
-"""
+Generate ONLY the complete page component code. No explanations."""
         return prompt
     
     def _identify_relevant_endpoints(self, page: PageSpec, backend_spec: BackendSpec) -> List[Dict[str, str]]:
@@ -975,808 +992,92 @@ NO explanations. NO markdown. NO comments about file locations.
     
     def _create_component_generation_prompt(self, component: ComponentSpec, plan: Plan) -> str:
         """
-        Create prompt for generating component
-        
+        Create a strict, production-grade prompt for generating one React component.
+
         Validates: Requirements 13.3
         """
-        # Validate component attributes
         if not component:
             raise ValueError("Component specification is None")
         if not component.name:
             raise ValueError("Component name is required")
-        
+
         props_info = ""
         if component.props:
-            props_list = [f"{key}: {value}" for key, value in component.props.items()]
-            props_info = f"Props (ALL MUST BE OPTIONAL): {', '.join(props_list)} - Make all props optional with default values so component works as <{component.name} />"
-        
-        # Check if this component needs backend integration (e.g., forms)
+            props_list = [f"{key}?: {value}" for key, value in component.props.items()]
+            props_info = f"Props (all optional): {', '.join(props_list)}"
+        else:
+            props_info = "Props: children?: React.ReactNode"
+
         backend_info = ""
         component_name_lower = (component.name or "").lower()
         component_desc_lower = (component.description or "").lower()
-        
-        # Safely check backend_logic and endpoints
+
         try:
-            has_backend = plan and plan.backend_logic and hasattr(plan.backend_logic, 'endpoints') and plan.backend_logic.endpoints
+            has_backend = bool(
+                plan
+                and plan.backend_logic
+                and hasattr(plan.backend_logic, 'endpoints')
+                and plan.backend_logic.endpoints
+            )
         except (AttributeError, TypeError):
             has_backend = False
-        
+
         if has_backend:
-            # Check if this is a form component that needs API integration
-            is_form_component = any(keyword in component_name_lower or keyword in component_desc_lower 
-                                   for keyword in ['form', 'contact', 'submit', 'search', 'input'])
-            
+            is_form_component = any(
+                keyword in component_name_lower or keyword in component_desc_lower
+                for keyword in ['form', 'contact', 'submit', 'search', 'input', 'newsletter']
+            )
             if is_form_component:
-                # Find relevant endpoints with safe access
-                relevant_endpoints = []
-                try:
-                    endpoints_list = plan.backend_logic.endpoints if plan.backend_logic and plan.backend_logic.endpoints else []
-                    for ep in endpoints_list:
-                        # Skip None endpoints
-                        if ep is None:
-                            continue
-                        # Handle both dict and object endpoints
-                        try:
-                            if isinstance(ep, dict):
-                                ep_path = ep.get('path', '').lower() if ep else ''
-                            else:
-                                ep_path = (getattr(ep, 'path', '') or '').lower()
-                            
-                            if any(keyword in ep_path for keyword in ['contact', 'submit', 'search', 'validate']):
-                                relevant_endpoints.append(ep)
-                        except (AttributeError, TypeError, KeyError) as e:
-                            # Skip this endpoint if we can't access it
-                            continue
-                except (AttributeError, TypeError) as e:
-                    # If we can't access endpoints, just skip backend integration
-                    relevant_endpoints = []
-                
-                if relevant_endpoints:
-                    endpoint_details = []
-                    for ep in relevant_endpoints:
-                        # Skip None endpoints
-                        if ep is None:
-                            continue
-                        # Handle both dict and object endpoints
-                        if isinstance(ep, dict):
-                            method = ep.get('method', 'GET')
-                            path = ep.get('path', '')
-                            desc = ep.get('description', 'API endpoint')
-                        else:
-                            method = getattr(ep, 'method', 'GET') or 'GET'
-                            path = getattr(ep, 'path', '') or ''
-                            desc = getattr(ep, 'description', 'API endpoint') or 'API endpoint'
-                        
-                        endpoint_details.append(f"  - {method} {path}: {desc}")
-                    
-                    backend_info = f"""
-
-BACKEND INTEGRATION:
-This component should integrate with backend API endpoints:
-{chr(10).join(endpoint_details)}
-
-Requirements:
-- Accept onSubmit callback prop for form submission
-- Use fetch() to call the backend endpoint
-- Include loading and error states
-- Provide user feedback on success/failure
-- Use proper TypeScript types for API responses
+                backend_info = """
+BACKEND INTEGRATION REQUIREMENTS:
+- Use controlled form state with useState
+- Submit data via fetch with async/await
+- Include loading, success, and error UI states
+- Use Alert and helper text for user feedback
+- Keep API URL in a constant and type response data
 """
-        
+
+        system_prompt = load_system_prompt("builder_agent_comprehensive_prompt.md") or ""
+
         prompt = f"""
-🚀 PRODUCTION DEPLOYMENT CONTEXT:
-This code will be deployed to PRODUCTION on Vercel/Netlify and will be LIVE on the internet.
-This is NOT a demo or prototype - it must be PRODUCTION-READY, HIGH-QUALITY code.
-The component will be used by real users in production, so code quality, error handling, and user experience are CRITICAL.
+{system_prompt}
 
-Generate a React TypeScript functional component with the following specifications:
+You are a senior React + TypeScript + Material UI engineer.
+Generate a single reusable component that is production-ready, visually polished, and safe for direct deployment.
 
-Component Name: {component.name}
-Type: {component.type}
-Description: {component.description}
-{props_info}
+NON-NEGOTIABLE RULES:
+1. Use ONLY Material UI primitives for layout and UI (Box, Container, Stack, Grid, Paper, Card, Typography, Button, TextField, etc.).
+2. Do NOT use raw HTML layout tags for structure (no div/header/section/footer/main/nav/article).
+3. Use TypeScript with strict typing; do not use any.
+4. All component props must be optional and have sensible defaults.
+5. Component must render correctly even when called as <{component.name} />.
+6. Styling must use sx and include a distinctive, modern visual direction (color system, spacing rhythm, elevation, and responsive behavior).
+7. Accessibility is required: semantic MUI structure, aria-label where needed, visible focus states, sufficient color contrast.
+
+COMPONENT SPEC:
+- Name: {component.name}
+- Type: {component.type}
+- Description: {component.description}
+- {props_info}
 {backend_info}
 
-═══════════════════════════════════════════════════════════════════════════════
-CRITICAL: TypeScript 4.9.5 Configuration
-═══════════════════════════════════════════════════════════════════════════════
-- TypeScript version: 4.9.5 (EXACT - compatible with react-scripts 5.0.1)
-- Use TypeScript 4.9.5 syntax ONLY (no TypeScript 5.x features)
-- All imports MUST NOT include file extensions
-- TypeScript 4.9.5 with react-scripts 5.0.1 requires imports WITHOUT extensions
-
-CRITICAL DEPLOYMENT REQUIREMENTS (TypeScript 4.9.5):
-- TypeScript version: 4.9.5 (EXACT version - compatible with react-scripts 5.0.1)
-- Write PRODUCTION-READY code that will deploy successfully on Vercel/Netlify
-- Use ONLY modern, stable React patterns (React 18+)
-- Avoid deprecated APIs and patterns
-- Use native browser APIs instead of deprecated polyfills
-- Write clean, minimal code without unnecessary dependencies
-- Ensure all imports are from stable, maintained packages
-- Follow React best practices for performance and accessibility
-- Use TypeScript 4.9.5 syntax ONLY (no TypeScript 5.x features)
-
-🚨 DEPLOYMENT BUILD PROCESS - UNDERSTAND THIS:
-- Vercel/Netlify runs: npm install → npm run build → deploy
-- TypeScript compiler (tsc) checks ALL files during "npm run build"
-- ANY TypeScript error = BUILD FAILURE = Deployment BLOCKED
-- Common errors that break deployment:
-  * TS2322: Property 'X' does not exist on type 'ComponentProps' (prop mismatch)
-  * TS2739: Type 'empty object' is missing properties from type 'ComponentProps' (REQUIRED PROPS ERROR!)
-  * TS2307: Cannot find module (wrong import path)
-  * TS2339: Property does not exist (missing import or wrong type)
-- These errors prevent the app from being deployed
-- Users see: "Error: Command 'npm run build' exited with 1"
-- This is why ALL props must be optional and match component interfaces
-
-🚨 CRITICAL ERROR EXAMPLE - TS2739 (THIS BREAKS DEPLOYMENT):
-❌ WRONG (causes TS2739 error during build):
-```typescript
-interface HeaderProps {{
-  logoUrl: string;  // ❌ Required - WRONG! Causes TS2739
-  navLinks: string;  // ❌ Required - WRONG! Causes TS2739
-}}
-const Header: React.FC<HeaderProps> = ({{ logoUrl, navLinks }}) => {{
-  return <div>{{logoUrl}}</div>;
-}};
-// When page uses: <Header />
-// TypeScript Error: TS2739: Type '{{}}' is missing properties from type 'HeaderProps': logoUrl, navLinks
-// Result: BUILD FAILS → Deployment BLOCKED → User sees error
-```
-
-✅ CORRECT (works with <Header />):
-```typescript
-interface HeaderProps {{
-  logoUrl?: string;  // ✅ Optional - CORRECT!
-  navLinks?: string;  // ✅ Optional - CORRECT!
-}}
-const Header: React.FC<HeaderProps> = ({{
-  logoUrl = '/logo.png',  // ✅ Default value
-  navLinks = []  // ✅ Default value
-}}) => {{
-  return <div>{{logoUrl}}</div>;
-}};
-// Now <Header /> works perfectly - no TypeScript errors
-// Result: BUILD SUCCEEDS → Deployment SUCCESS
-```
-
-CRITICAL RULE: EVERY prop in EVERY interface MUST have a ? mark (optional)
-- ❌ WRONG: propName: string
-- ✅ CORRECT: propName?: string
-- This is NOT optional - it's MANDATORY for deployment success
-
-Requirements:
-- Use TypeScript with proper interface definitions for props
-- CRITICAL: ALL props MUST be optional (propName?: type) with default values
-- Components MUST work without any props: <ComponentName />
-- Create a reusable, well-structured component
-- Include proper CSS classes for styling
-- Make the component accessible (ARIA attributes where appropriate)
-- Add meaningful default content if no props are provided
-- Follow React best practices
-{"- Include API integration as specified above" if backend_info else ""}
-{"- Add state management for loading and error states" if backend_info else ""}
-
-Component Structure:
-- Import React (and useState if needed)
-- Define TypeScript interface for props with ALL props optional: propName?: type
-- Use default parameter values: const Component: React.FC<Props> = ({{ propName = 'default' }}) => {{}}
-- Define the functional component with proper typing
-- Export as default
-- Use semantic HTML elements
-- Include proper error handling
-{"- Include form submission handler with API call" if backend_info else ""}
-
-CODE QUALITY STANDARDS:
-- No console warnings or errors
-- No deprecated React patterns (e.g., no legacy context API)
-- Use modern React hooks (useState, useEffect, useCallback, useMemo)
-- Proper TypeScript types (no 'any' types)
-- Clean, readable code with proper indentation
-- Minimal dependencies - use native browser APIs when possible
-
-CRITICAL IMPORT RULES (TypeScript 4.9.5):
-- NEVER include file extensions in imports - TypeScript 4.9.5 resolves them automatically
-- CORRECT: import Component from './Component' (NO .tsx extension)
-- CORRECT: import Header from '../components/Header' (NO .tsx extension)
-- CORRECT: import HomePage from './pages/HomePage' (NO .tsx extension)
-- WRONG: import Component from './Component.tsx' (DO NOT include .tsx)
-- This is the standard TypeScript 4.9.5 behavior with react-scripts 5.0.1
-
-🚨 CRITICAL: TYPESCRIPT SYNTAX RULES - AVOID SYNTAX ERRORS:
-═══════════════════════════════════════════════════════════════════════════════
-
-These syntax mistakes cause "SyntaxError: Unexpected token" and break deployment:
-
-1. FUNCTION TYPE SYNTAX:
-   ❌ WRONG: prop?: function;  // 'function' is NOT valid TypeScript syntax!
-   ❌ WRONG: prop?: Function;  // Lowercase 'function' - invalid!
-   ✅ CORRECT: prop?: () => void;  // Arrow function type - CORRECT!
-   ✅ CORRECT: prop?: (data: FormData) => void;  // With parameters - CORRECT!
-
-2. INTERFACE PROPERTY SYNTAX:
-   ❌ WRONG: interface Props {{ prop: string }}  // Missing semicolon
-   ✅ CORRECT: interface Props {{ prop: string; }}  // Must have semicolon
-   ❌ WRONG: interface Props {{ prop string }}  // Missing colon
-   ✅ CORRECT: interface Props {{ prop: string; }}  // Must have colon
-
-3. OPTIONAL PROPERTY SYNTAX:
-   ❌ WRONG: interface Props {{ prop?: string }}  // Missing semicolon
-   ✅ CORRECT: interface Props {{ prop?: string; }}  // Must have semicolon
-   ❌ WRONG: interface Props {{ prop? string }}  // Missing colon
-   ✅ CORRECT: interface Props {{ prop?: string; }}  // Must have colon AND semicolon
-
-4. COMPONENT FUNCTION SYNTAX:
-   ❌ WRONG: const Component = (props) => { ... }  // Missing type annotation
-   ✅ CORRECT: const Component: React.FC<Props> = (props) => { ... }
-   ❌ WRONG: const Component: React.FC<Props> = props => { ... }  // Missing parentheses
-   ✅ CORRECT: const Component: React.FC<Props> = (props) => { ... }
-
-5. DESTRUCTURING WITH DEFAULTS:
-   ❌ WRONG: const Component = ({{ prop }}) => {{ ... }}  // No default, prop might be undefined
-   ✅ CORRECT: const Component = ({{ prop = 'default' }}) => {{ ... }}  // Has default
-   ❌ WRONG: const Component = ({{ prop = }}) => {{ ... }}  // Incomplete default
-   ✅ CORRECT: const Component = ({{ prop = 'value' }}) => {{ ... }}  // Complete default
-
-6. TYPE ANNOTATIONS:
-   ❌ WRONG: const [state, setState] = useState();  // Missing type
-   ✅ CORRECT: const [state, setState] = useState<string>('');
-   ❌ WRONG: const handleClick = (e) => { ... }  // Missing event type
-   ✅ CORRECT: const handleClick = (e: React.MouseEvent) => { ... }
-
-7. JSX SYNTAX:
-   ❌ WRONG: <div style={{{{ color: "red" }}}}>  // Missing closing tag
-   ✅ CORRECT: <div style={{{{ color: "red" }}}}>Content</div>
-   ❌ WRONG: <Component prop={{{{value}}}}>  // Missing closing tag
-   ✅ CORRECT: <Component prop={{{{value}}}} />  // Self-closing OR <Component>Content</Component>
-
-8. STRING LITERALS:
-   ❌ WRONG: const text = 'Hello';  // In JSX, use double quotes or template literals
-   ✅ CORRECT: const text = "Hello";  // Or use template literals: `Hello`
-   ❌ WRONG: style={{{{ color: 'red' }}}}  // Single quotes in object - can cause issues
-   ✅ CORRECT: style={{{{ color: "red" }}}}  // Double quotes in object
-
-9. OBJECT SYNTAX:
-   ❌ WRONG: const obj = {{ key: value }}  // Missing semicolon (in some contexts)
-   ✅ CORRECT: const obj = {{ key: value }};  // Has semicolon
-   ❌ WRONG: style={{{{ color: 'red'  // Missing closing brace
-   ✅ CORRECT: style={{{{ color: "red" }}}}  // Complete braces
-
-10. ARRAY TYPE SYNTAX - CRITICAL FOR TYPESCRIPT:
-    🚨 CRITICAL ERROR: Using 'array' as a type causes "Cannot find name 'array'" build failure
-    
-    ❌ WRONG (causes TS2552 build error):
-    ```typescript
-    interface ContactSectionProps {{
-      hours?: array;  // ❌ 'array' is NOT a valid TypeScript type!
-      socialLinks?: array;  // ❌ BUILD FAILS: Cannot find name 'array'
-    }}
-    // Error: TS2552: Cannot find name 'array'. Did you mean 'Array'?
-    // Result: BUILD FAILS → Deployment BLOCKED
-    ```
-    
-    ✅ CORRECT (valid TypeScript array syntax):
-    ```typescript
-    interface ContactSectionProps {{
-      hours?: string[];  // ✅ Array of strings - CORRECT!
-      socialLinks?: Array<string>;  // ✅ Generic Array type - CORRECT!
-      items?: Array<{{{{ label: string; path: string }}}}>;  // ✅ Array of objects - CORRECT!
-    }}
-    // Result: BUILD SUCCEEDS → Deployment SUCCESS
-    ```
-    
-    CRITICAL RULES FOR ARRAY TYPES:
-    - ❌ NEVER use: propName?: array (invalid - 'array' is not a type)
-    - ❌ NEVER use: propName?: Array (missing type parameter)
-    - ✅ ALWAYS use: propName?: string[] (array syntax - CORRECT)
-    - ✅ OR use: propName?: Array<string> (generic Array syntax - CORRECT)
-    - ✅ For arrays of objects: propName?: Array<{{{{ keyName: typeName }}}}> (CORRECT)
-    - ✅ For arrays of arrays: propName?: string[][] (CORRECT)
-    
-    Common array type examples:
-    - string[] = Array of strings
-    - number[] = Array of numbers
-    - boolean[] = Array of booleans
-    - Array<string> = Generic array of strings (same as string[])
-    - Array<{ id: number; name: string }> = Array of objects
-    - (string | number)[] = Array of strings or numbers (union type)
-    
-11. ARRAY USAGE SYNTAX:
-    ❌ WRONG: const arr = [1, 2, 3]  // Missing semicolon (in some contexts)
-    ✅ CORRECT: const arr = [1, 2, 3];  // Has semicolon
-    ❌ WRONG: items.map(item => <Item />)  // Missing key prop
-    ✅ CORRECT: items.map(item => <Item key={{{{item.id}}}} />)  // Has key
-
-SYNTAX CHECKLIST BEFORE GENERATING CODE:
-- [ ] All interface properties end with semicolon: prop: type;
-- [ ] All optional properties use ?: prop?: type;
-- [ ] Function types use arrow syntax: () => void (NOT 'function')
-- [ ] Array types use string[] or Array<string> (NOT 'array')
-- [ ] Component destructuring has defaults: ({{ prop = 'default' }})
-- [ ] All JSX tags are properly closed: <Tag /> or <Tag>Content</Tag>
-- [ ] All object literals have proper braces: {{ key: "value" }}
-- [ ] All statements end with semicolons where needed
-- [ ] No missing colons in type annotations: prop: type (NOT prop type)
-- [ ] No missing parentheses in function parameters: (props) => (NOT props =>)
-- [ ] All string literals use consistent quotes: "string" or `template`
-
-🚨 CRITICAL: ARRAY TYPE SYNTAX - THIS BREAKS DEPLOYMENT:
-❌ WRONG (causes TS2552 build error):
-```typescript
-interface ContactSectionProps {{
-  hours?: array;  // ❌ 'array' is NOT a valid TypeScript type!
-  socialLinks?: array;  // ❌ BUILD FAILS: Cannot find name 'array'
-}}
-// Error: TS2552: Cannot find name 'array'. Did you mean 'Array'?
-// Result: BUILD FAILS → Deployment BLOCKED
-```
-
-✅ CORRECT (valid TypeScript array syntax):
-```typescript
-interface ContactSectionProps {{
-  hours?: string[];  // ✅ Array of strings - CORRECT!
-  socialLinks?: Array<string>;  // ✅ Generic Array type - CORRECT!
-  items?: Array<{{ label: string; path: string }}>;  // ✅ Array of objects - CORRECT!
-}}
-// Result: BUILD SUCCEEDS → Deployment SUCCESS
-```
-
-CRITICAL RULES FOR ARRAY TYPES:
-- ❌ NEVER use: propName?: array (invalid - 'array' is not a type, causes TS2552)
-- ❌ NEVER use: propName?: Array (missing type parameter)
-- ✅ ALWAYS use: propName?: string[] (array syntax - CORRECT)
-- ✅ OR use: propName?: Array<string> (generic Array syntax - CORRECT)
-- ✅ For arrays of objects: propName?: Array<{{{{ keyName: typeName }}}}> (CORRECT)
-- ✅ For arrays of arrays: propName?: string[][] (CORRECT)
-- Common types: string[], number[], boolean[], Array<string>, Array<number>
-
-🚨 CRITICAL: FUNCTION TYPE SYNTAX - THIS BREAKS DEPLOYMENT:
-❌ WRONG (causes SyntaxError during build):
-```typescript
-interface ContactFormProps {{
-  onSubmit?: function;  // ❌ 'function' is NOT valid TypeScript syntax!
-}}
-// SyntaxError: Unexpected token - BUILD FAILS → Deployment BLOCKED
-```
-
-✅ CORRECT (valid TypeScript syntax):
-```typescript
-interface ContactFormProps {{
-  onSubmit?: () => void;  // ✅ Arrow function type - CORRECT!
-}}
-// OR with parameters:
-interface ContactFormProps {{
-  onSubmit?: (data: FormData) => void;  // ✅ Arrow function with params - CORRECT!
-}}
-```
-
-CRITICAL RULES FOR FUNCTION TYPES:
-- ❌ NEVER use: propName?: function (invalid syntax - causes SyntaxError)
-- ❌ NEVER use: propName?: Function (lowercase 'function' - invalid)
-- ✅ ALWAYS use: propName?: () => void (arrow function type - CORRECT)
-- ✅ OR use: propName?: (param: type) => void (arrow function with params - CORRECT)
-- Function types default to: undefined (not a function call)
-
-CRITICAL: PROPS HANDLING - MAKE ALL PROPS OPTIONAL
-- ALL props MUST be optional with default values: propName?: type
-- Components MUST work without any props: <ComponentName />
-- Use TypeScript optional syntax: propName?: string (NOT propName: string)
-- Provide sensible default values in function parameters
-- Components should be self-contained and work standalone
-- Example:
-  ```typescript
-  interface HeroSectionProps {{
-    heading?: string;
-    subheading?: string;
-    imageUrl?: string;
-  }}
-  
-  const HeroSection: React.FC<HeroSectionProps> = ({{
-    heading = 'Welcome',
-    subheading = 'Default subheading',
-    imageUrl = '/default-image.jpg'
-  }}) => {{
-    return (
-      <div>
-        <h1>{{heading}}</h1>
-        <p>{{subheading}}</p>
-        <img src={{imageUrl}} alt="Hero" />
-      </div>
-    );
-  }};
-  ```
-- This ensures components can be used in pages without props: <HeroSection />
-
-CRITICAL: NEVER REDEFINE IMPORTED COMPONENTS
-- If you import a component, DO NOT define it again in the same file
-- Example of ERROR (DO NOT DO THIS):
-  ```
-  import Header from '../components/Header';  // Imported (NO .tsx extension)
-  const Header = () => {{ ... }};  // ERROR: Redeclaration!
-  ```
-- Each component should be defined ONLY ONCE in its own file
-- Pages should ONLY import and use components, never redefine them
-- If a component is imported, use it directly - do not create a local version
-- TypeScript 4.9.5 with react-scripts 5.0.1 requires imports WITHOUT extensions
-
-COMPONENT USAGE RULES:
-- Import components at the top of the file
-- Use imported components in JSX: <Header /> (NO props required - components work standalone)
-- Components are self-contained with default values for all props
-- Never create placeholder/dummy versions of imported components
-- Each component lives in its own file (src/components/ComponentName.tsx)
-- If a component needs customization, pass optional props: <Header title="Custom" />
-
-CRITICAL: Components MUST work without props
-- All components should be usable as: <ComponentName />
-- Props are optional and have default values
-- This ensures pages can use components without knowing their prop structure
-
-CRITICAL: COMPONENT PROP MATCHING - AVOID TYPESCRIPT ERRORS
-- Before using a component with props, you MUST understand its interface
-- Components have optional props, but if you pass props, they MUST match the component's interface
-- DO NOT pass props that don't exist in the component's interface - this causes TypeScript errors
-- If a component doesn't have a prop you need, use the component WITHOUT that prop, or use a different component
-- Example of ERROR (DO NOT DO THIS):
-  ```typescript
-  // If MenuSection interface is: {{ title?: string; items?: MenuItem[] }}
-  // WRONG:
-  <MenuSection name="Pizza" description="..." />  // 'name' and 'description' don't exist!
-  // CORRECT:
-  <MenuSection title="Appetizers" items={{appetizers}} />  // Matches the interface
-  // OR use MenuItem for individual items:
-  <MenuItem name="Pizza" description="..." />  // If MenuItem has these props
-  ```
-- Always check: Does the component interface include the prop you're trying to pass?
-- If unsure, use the component WITHOUT props: <ComponentName />
-- Components work standalone with default values
-
-COMPONENT SELECTION RULES - USE THE RIGHT COMPONENT:
-- Use the RIGHT component for the RIGHT purpose
-- MenuSection = container for multiple menu items (typically has: title, items array)
-- MenuItem = individual menu item (typically has: name, description, price, image)
-- MenuCategory = category header/group (typically has: title, description, items)
-- Card = display card (typically has: title, description, image, icon)
-- Don't mix them up - use MenuItem for items, MenuSection for sections
-- If you need to display individual items, use MenuItem component
-- If you need to display a section/container, use MenuSection component
-- When in doubt, check component names: Item = individual, Section = container, Category = group
-
-CRITICAL: Components MUST work without props
-- All components should be usable as: <ComponentName />
-- Props are optional and have default values
-- This ensures pages can use components without knowing their prop structure
-
-═══════════════════════════════════════════════════════════════════════════════
-🚨 DEPLOYMENT FAILURE SCENARIOS - AVOID THESE AT ALL COSTS:
-═══════════════════════════════════════════════════════════════════════════════
-
-These errors cause "npm run build" to FAIL on Vercel/Netlify, preventing deployment:
-
-SCENARIO A: PROP MISMATCH ERROR (MOST COMMON - CAUSES BUILD FAILURE)
-❌ ERROR THAT BREAKS DEPLOYMENT:
-```typescript
-// MenuSection component interface: {{ title?: string; items?: MenuItem[] }}
-// Page tries to use it like this:
-<MenuSection name="Pizza" description="Delicious pizza" price="$10" />
-// TypeScript Error: TS2322: Property 'name' does not exist on type 'MenuSectionProps'
-// Result: BUILD FAILS → Deployment BLOCKED → User sees error
-```
-
-✅ CORRECT APPROACH:
-```typescript
-// Option 1: Use component WITHOUT props (safest)
-<MenuSection />
-
-// Option 2: Use correct props that exist in interface
-<MenuSection title="Appetizers" items={appetizersArray} />
-
-// Option 3: Use correct component for individual items
-<MenuItem name="Pizza" description="Delicious pizza" price="$10" />
-```
-
-SCENARIO B: WRONG COMPONENT FOR WRONG PURPOSE
-❌ ERROR THAT BREAKS DEPLOYMENT:
-```typescript
-// Trying to display individual menu items using MenuSection:
-const menuItems = [
-  {{ name: "Pizza", price: "$10" }},
-  {{ name: "Burger", price: "$8" }}
-];
-menuItems.map(item => (
-  <MenuSection name={item.name} price={item.price} />  // WRONG! MenuSection doesn't have 'name' prop
-));
-// TypeScript Error: TS2322: Property 'name' does not exist
-// Result: BUILD FAILS → Deployment BLOCKED
-```
-
-✅ CORRECT APPROACH:
-```typescript
-// Use MenuItem for individual items:
-menuItems.map(item => (
-  <MenuItem key={item.name} name={item.name} price={item.price} />
-));
-
-// OR use MenuSection to contain multiple items:
-<MenuSection title="Our Menu" items={menuItems} />
-```
-
-SCENARIO C: ASSUMING PROPS EXIST WITHOUT CHECKING
-❌ ERROR THAT BREAKS DEPLOYMENT:
-```typescript
-// Assuming Card component has 'imageUrl' prop:
-<Card title="Feature" imageUrl="/images/feature.jpg" />
-// But Card interface is: {{ title?: string; description?: string; icon?: string }}
-// TypeScript Error: TS2322: Property 'imageUrl' does not exist
-// Result: BUILD FAILS → Deployment BLOCKED
-```
-
-✅ CORRECT APPROACH:
-```typescript
-// Check component interface first, then use correct prop:
-<Card title="Feature" icon="🚀" />  // Uses 'icon' which exists in interface
-
-// OR use component without props:
-<Card />  // Works with default values
-```
-
-DEPLOYMENT BUILD PROCESS CONTEXT:
-- Vercel/Netlify runs: npm install → npm run build
-- TypeScript compiler checks ALL files during build
-- ANY TypeScript error = BUILD FAILURE = NO DEPLOYMENT
-- Errors like "Property 'X' does not exist" are caught at BUILD TIME
-- These errors prevent the app from being deployed
-- Users see: "Error: Command 'npm run build' exited with 1"
-- This is why prop matching is CRITICAL - it prevents deployment failures
-
-═══════════════════════════════════════════════════════════════════════════════
-💡 REAL-WORLD SCENARIOS & EXAMPLES:
-═══════════════════════════════════════════════════════════════════════════════
-
-SCENARIO 1: Simple Display Component (ALL PROPS OPTIONAL)
-```typescript
-interface CardProps {{
-  title?: string;
-  description?: string;
-  icon?: string;
-}}
-
-const Card: React.FC<CardProps> = ({{ 
-  title = 'Default Title',
-  description = 'Default description text',
-  icon
-}}) => {{
-  return (
-    <div style={{{{ 
-      background: 'white', 
-      padding: '30px', 
-      borderRadius: '15px',
-      boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
-    }}}}>
-      {{{{icon && <div style={{{{ fontSize: '3rem', marginBottom: '15px' }}}}>{{{{icon}}}}</div>}}}}
-      <h3 style={{{{ fontSize: '1.5rem', marginBottom: '10px', color: '#2d3748' }}}}>{{{{title}}}}</h3>
-      <p style={{{{ color: '#718096', lineHeight: '1.6' }}}}>{{{{description}}}}</p>
-    </div>
-  );
-}};
-
-export default Card;
-// Usage: <Card /> or <Card title="Custom" description="Custom desc" />
-```
-
-SCENARIO 2: Form Component with API Integration (CORRECT FUNCTION TYPE)
-```typescript
-// ✅ CORRECT: Function type using arrow function syntax
-interface ContactFormProps {{
-  onSubmit?: (data: FormData) => void;  // ✅ Arrow function type - CORRECT!
-}}
-
-// ❌ WRONG (DO NOT DO THIS):
-// interface ContactFormProps {{
-//   onSubmit?: function;  // ❌ 'function' is NOT valid TypeScript syntax!
-// }}
-
-const ContactForm: React.FC<ContactFormProps> = ({{ onSubmit }}) => {{
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {{
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    
-    try {{
-      const response = await fetch('/api/contact', {{
-        method: 'POST',
-        headers: {{ 'Content-Type': 'application/json' }},
-        body: JSON.stringify({{{{ name, email, message }}}})
-      }});
-      
-      if (!response.ok) throw new Error('Submission failed');
-      // Handle success
-      if (onSubmit) onSubmit({{{{ name, email, message }}}} as any);
-    }} catch (err) {{
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    }} finally {{
-      setLoading(false);
-    }}
-  }};
-
-  return (
-    <form onSubmit={{{{handleSubmit}}}} style={{{{ maxWidth: '600px', margin: '0 auto' }}}}>
-      {{{{error && <div style={{{{ color: 'red', marginBottom: '15px' }}}}>{{{{error}}}}</div>}}}}
-      <input 
-        type="text" 
-        value={{{{name}}}} 
-        onChange={{{{(e) => setName(e.target.value)}}}} 
-        placeholder="Your Name"
-        required
-      />
-      <input 
-        type="email" 
-        value={{{{email}}}} 
-        onChange={{{{(e) => setEmail(e.target.value)}}}} 
-        placeholder="Your Email"
-        required
-      />
-      <textarea 
-        value={{{{message}}}} 
-        onChange={{{{(e) => setMessage(e.target.value)}}}} 
-        placeholder="Your Message"
-        required
-      />
-      <button type="submit" disabled={{{{loading}}}}>
-        {{{{loading ? 'Submitting...' : 'Submit'}}}}
-      </button>
-    </form>
-  );
-}};
-
-export default ContactForm;
-```
-
-SCENARIO 3: Navigation Component
-```typescript
-import {{ Link as LinkComponent }} from 'react-router-dom';
-
-interface NavProps {{
-  items?: Array<{{ label: string; path: string }}>;
-}}
-
-const Navigation: React.FC<NavProps> = ({{ items = [] }}) => {{
-  return (
-    <nav style={{{{ 
-      background: '#2d3748', 
-      padding: '20px',
-      display: 'flex',
-      gap: '30px',
-      justifyContent: 'center'
-    }}}}>
-      {{{{items.map((item) => (
-        <LinkComponent 
-          key={{{{item.path}}}} 
-          to={{{{item.path}}}}
-          style={{{{ color: 'white', textDecoration: 'none', fontSize: '1.1rem' }}}}
-        >
-          {{{{item.label}}}}
-        </LinkComponent>
-      ))}}}}
-    </nav>
-  );
-}};
-
-export default Navigation;
-```
-
-🚨 DEPLOYMENT FAILURE SCENARIOS - AVOID THESE AT ALL COSTS:
-═══════════════════════════════════════════════════════════════════════════════
-
-These errors cause "npm run build" to FAIL on Vercel/Netlify, preventing deployment:
-
-SCENARIO A: REQUIRED PROPS IN INTERFACE (CAUSES BUILD FAILURE)
-❌ ERROR THAT BREAKS DEPLOYMENT:
-```typescript
-// Component with required props:
-interface CardProps {{
-  title: string;  // ❌ Required prop - WRONG!
-  description: string;  // ❌ Required prop - WRONG!
-}}
-// When page tries to use: <Card />
-// TypeScript Error: TS2741: Property 'title' is missing
-// Result: BUILD FAILS → Deployment BLOCKED
-```
-
-✅ CORRECT APPROACH:
-```typescript
-// ALL props optional with defaults:
-interface CardProps {{
-  title?: string;  // ✅ Optional
-  description?: string;  // ✅ Optional
-}}
-const Card: React.FC<CardProps> = ({{
-  title = 'Default Title',  // ✅ Default value
-  description = 'Default description'  // ✅ Default value
-}}) => {{ ... }};
-// Now <Card /> works perfectly - no TypeScript errors
-```
-
-SCENARIO B: MISSING DEFAULT VALUES (CAUSES RUNTIME ERRORS)
-❌ ERROR THAT BREAKS DEPLOYMENT:
-```typescript
-// Props optional but no defaults:
-const Card: React.FC<CardProps> = ({{ title, description }}) => {{
-  return <div>{{title}}</div>;  // ❌ title might be undefined!
-}};
-// Runtime error if title is undefined
-// Result: App crashes in production
-```
-
-✅ CORRECT APPROACH:
-```typescript
-// Always provide defaults:
-const Card: React.FC<CardProps> = ({{
-  title = 'Default Title',  // ✅ Always has a value
-  description = 'Default'  // ✅ Always has a value
-}}) => {{
-  return <div>{{title}}</div>;  // ✅ Safe - always defined
-}};
-```
-
-SCENARIO C: WRONG IMPORT EXTENSIONS (CAUSES BUILD FAILURE)
-❌ ERROR THAT BREAKS DEPLOYMENT:
-```typescript
-import Card from './Card.tsx';  // ❌ Includes .tsx extension
-// TypeScript Error: TS2307: Cannot find module './Card.tsx'
-// Result: BUILD FAILS → Deployment BLOCKED
-```
-
-✅ CORRECT APPROACH:
-```typescript
-import Card from './Card';  // ✅ NO extension - TypeScript 4.9.5 resolves automatically
-```
-
-DEPLOYMENT BUILD PROCESS CONTEXT:
-- Vercel/Netlify runs: npm install → npm run build → deploy
-- TypeScript compiler (tsc) checks ALL files during "npm run build"
-- ANY TypeScript error = BUILD FAILURE = NO DEPLOYMENT
-- Errors like "Property 'X' is missing" are caught at BUILD TIME
-- These errors prevent the app from being deployed
-- Users see: "Error: Command 'npm run build' exited with 1"
-- This is why ALL props must be optional with defaults
-
-COMMON PITFALLS TO AVOID (SYNTAX ERRORS):
-1. ❌ Importing with extensions: import Card from './Card.tsx' (WRONG!)
-2. ✅ Correct: import Card from './Card' (NO extension)
-3. ❌ Redefining imported components
-4. ❌ Using 'any' type for props
-5. ❌ Making props required when they should be optional
-6. ✅ ALL props MUST be optional: propName?: type (NOT propName: type)
-7. ✅ Components MUST work without props: <ComponentName />
-8. ❌ Missing default values for optional props (causes runtime errors)
-9. ❌ Missing error handling in async operations
-10. ❌ Not handling loading/error states
-11. ❌ Missing TypeScript interfaces for props
-12. ❌ Required props in interface (causes build failure when component used without props)
-13. ❌ Missing semicolons in interface properties: prop: string (WRONG - causes SyntaxError!)
-14. ✅ CORRECT: prop: string; (MUST have semicolon)
-15. ❌ Using 'function' as type: prop?: function (WRONG - causes SyntaxError!)
-16. ✅ CORRECT: prop?: () => void (MUST use arrow function syntax)
-17. ❌ Missing closing braces in object literals: {{ color: 'red' (WRONG - causes SyntaxError!)
-18. ✅ CORRECT: {{ color: "red" }} (MUST have closing braces)
-19. ❌ Missing closing tags in JSX: <div> (WRONG - causes SyntaxError!)
-20. ✅ CORRECT: <div>Content</div> or <div /> (MUST be closed)
-21. ❌ Missing colons in type annotations: prop string (WRONG - causes SyntaxError!)
-22. ✅ CORRECT: prop: string (MUST have colon)
-23. ❌ Missing parentheses in function parameters: props => (WRONG - causes SyntaxError!)
-24. ✅ CORRECT: (props) => (MUST have parentheses)
-
-Return ONLY the TypeScript React component code, no explanations or markdown formatting.
+OUTPUT CONTRACT:
+- Return ONLY valid TSX code for this component file.
+- Include imports.
+- Export default {component.name}.
+- No markdown fences.
+- No explanation text.
+- Do NOT use JavaScript template literals (no backticks). Use normal quoted strings only.
+
+QUALITY CHECKLIST (must pass):
+- Build-safe TypeScript syntax
+- Responsive on mobile and desktop
+- Clear visual hierarchy
+- Professional copy (not placeholder gibberish)
+- No TODO/FIXME markers
+- Props passed from parent must exist in child component interface
 """
         return prompt
-    
     def _extract_code_from_response(self, response_text: str) -> str:
         """Extract code from LLM response, removing markdown formatting"""
         # Remove markdown code blocks if present
@@ -1808,8 +1109,8 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         Automatically correct common TypeScript errors in generated code
         
         Fixes:
-        - array type → string[] (or appropriate type)
-        - function type → () => void (arrow function syntax)
+        - array type  string[] (or appropriate type)
+        - function type  () => void (arrow function syntax)
         - Missing semicolons in interfaces
         - Other common syntax issues
         
@@ -1946,7 +1247,7 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         )
         
         # Also fix Array without type parameter (less common but possible)
-        # Pattern: propName?: Array; → propName?: Array<string>;
+        # Pattern: propName?: Array;  propName?: Array<string>;
         code = re.sub(
             r'(\w+)\s*\?:\s*Array\s*;',
             r'\1?: Array<string>;',
@@ -1969,6 +1270,18 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
             ': string[];',
             code,
             flags=re.IGNORECASE | re.MULTILINE
+        )
+
+        # Fix common JSX numeric prop mistakes generated by LLMs
+        # Example: <Grid container spacing=4>  ->  <Grid container spacing={4}>
+        numeric_jsx_props = (
+            "spacing|rowSpacing|columnSpacing|xs|sm|md|lg|xl|elevation|order|gap|"
+            "p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|zIndex|top|right|bottom|left"
+        )
+        code = re.sub(
+            rf'(\b(?:{numeric_jsx_props}))=(\d+)(?=[\s>/])',
+            r'\1={\2}',
+            code
         )
         
         return code
@@ -1994,12 +1307,12 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         array_matches = re.findall(array_type_pattern, code, re.IGNORECASE | re.MULTILINE)
         if array_matches:
             # This should have been auto-corrected, but if it wasn't, apply correction now
-            print(f"  ⚠️  Warning: Found 'array' type usage in code. Applying auto-correction...")
+            print(f"  âš ï¸  Warning: Found 'array' type usage in code. Applying auto-correction...")
             code = self._auto_correct_code_errors(code)
             # Re-check after correction
             array_matches_after = re.findall(array_type_pattern, code, re.IGNORECASE | re.MULTILINE)
             if array_matches_after:
-                print(f"  ⚠️  Warning: Some 'array' types may still remain. Please review the code.")
+                print(f"  âš ï¸  Warning: Some 'array' types may still remain. Please review the code.")
         
         # Check for duplicate component definitions
         # Pattern: import ComponentName from '...' followed by const ComponentName = ...
@@ -2022,13 +1335,17 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         
         if code.count('(') != code.count(')'):
             raise ValueError("Code validation error: Mismatched parentheses")
+
+        # Detect broken template literal syntax (common LLM failure in TSX)
+        if code.count('`') % 2 != 0:
+            raise ValueError("Code validation error: Unterminated template literal")
         
         # Check for required imports
         if 'React' in code and 'import React' not in code and 'import * as React' not in code:
             raise ValueError("Code validation error: React is used but not imported")
     
     def _generate_basic_page_template(self, page: PageSpec) -> str:
-        """Generate basic page template as fallback"""
+        """Generate MUI-based page template as fallback"""
         # Validate page attributes
         if not page:
             raise ValueError("Page specification is None")
@@ -2042,23 +1359,124 @@ Return ONLY the TypeScript React component code, no explanations or markdown for
         for comp_name in (page.components or []):
             if comp_name not in ['Header', 'Footer']:  # These are handled separately
                 component_imports.append(f"import {comp_name} from '../components/{comp_name}';")
-                component_usage.append(f"        <{comp_name} />")
+                component_usage.append(f"          <{comp_name} />")
         
         imports_str = '\n'.join(component_imports)
         usage_str = '\n'.join(component_usage)
         
         return f"""import React from 'react';
+import {{ Box, Container, Typography, Button, Card, CardContent, Grid, Stack }} from '@mui/material';
+import {{ ArrowForward, Star, Speed, Security }} from '@mui/icons-material';
 {imports_str}
 
 const {page_name}: React.FC = () => {{
   return (
-    <div className="page-content">
-      <div className="container">
-        <h1>{page.name.replace('Page', '').replace('Home', 'Welcome')}</h1>
-        <p>{page.description}</p>
+    <Box>
+      {{/* Hero Section */}}
+      <Box sx={{{{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        color: 'white',
+        py: 12,
+        textAlign: 'center'
+      }}}}>
+        <Container maxWidth="lg">
+          <Typography variant="h1" sx={{{{ mb: 3, fontWeight: 700 }}}}>
+            {page.name.replace('Page', '').replace('Home', 'Welcome to Our Platform')}
+          </Typography>
+          <Typography variant="h5" sx={{{{ mb: 4, opacity: 0.9, maxWidth: '700px', mx: 'auto' }}}}>
+            {page.description}
+          </Typography>
+          <Button 
+            variant="contained" 
+            size="large" 
+            endIcon={{<ArrowForward />}}
+            sx={{{{ px: 4, py: 1.5, fontSize: '1.1rem', bgcolor: 'secondary.main' }}}}
+          >
+            Get Started Today
+          </Button>
+        </Container>
+      </Box>
+
+      {{/* Components Section */}}
+      <Container maxWidth="lg" sx={{{{ py: 6 }}}}>
 {usage_str}
-      </div>
-    </div>
+      </Container>
+
+      {{/* Features Section */}}
+      <Container maxWidth="lg" sx={{{{ py: 8 }}}}>
+        <Typography variant="h2" align="center" sx={{{{ mb: 6, color: 'primary.main' }}}}>
+          Highlights
+        </Typography>
+        <Grid container spacing={4}>
+          {{[
+            {{ 
+              icon: <Star sx={{{{ fontSize: '3rem' }}}} />, 
+              title: 'Fresh Daily Preparation', 
+              desc: 'Every item is prepared with attention to consistency, flavor, and presentation for a complete dining experience.' 
+            }},
+            {{ 
+              icon: <Speed sx={{{{ fontSize: '3rem' }}}} />, 
+              title: 'Fast and Friendly Service', 
+              desc: 'Orders and reservations are handled quickly so guests can enjoy smooth, reliable service during peak hours.' 
+            }},
+            {{ 
+              icon: <Security sx={{{{ fontSize: '3rem' }}}} />, 
+              title: 'Trusted Local Favorite', 
+              desc: 'Built around quality ingredients and neighborhood hospitality that keeps guests returning week after week.' 
+            }}
+          ].map((feature, index) => (
+            <Grid item xs={{12}} md={{4}} key={{index}}>
+              <Card sx={{{{ height: '100%', textAlign: 'center', p: 3, boxShadow: 3, borderRadius: 3 }}}}>
+                <CardContent>
+                  <Box sx={{{{ color: 'primary.main', mb: 2 }}}}>
+                    {{feature.icon}}
+                  </Box>
+                  <Typography variant="h5" sx={{{{ mb: 2, fontWeight: 600 }}}}>
+                    {{feature.title}}
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" sx={{{{ lineHeight: 1.6 }}}}>
+                    {{feature.desc}}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}}
+        </Grid>
+      </Container>
+
+      {{/* Call to Action Section */}}
+      <Box sx={{{{
+        bgcolor: 'primary.main',
+        color: 'white',
+        py: 8,
+        textAlign: 'center'
+      }}}}>
+        <Container maxWidth="md">
+          <Typography variant="h3" sx={{{{ mb: 3, fontWeight: 600 }}}}>
+            Ready to Visit?
+          </Typography>
+          <Typography variant="h6" sx={{{{ mb: 4, opacity: 0.9 }}}}>
+            Plan your next meal, reserve a table, or browse the menu for today’s specials.
+          </Typography>
+          <Stack direction={{{{ xs: 'column', sm: 'row' }}}} spacing={{2}} justifyContent="center">
+            <Button 
+              variant="contained" 
+              size="large"
+              sx={{{{ bgcolor: 'secondary.main', px: 4, py: 1.5 }}}}
+            >
+              Explore Menu
+            </Button>
+            <Button 
+              variant="outlined" 
+              size="large"
+              sx={{{{ borderColor: 'white', color: 'white', px: 4, py: 1.5 }}}}
+            >
+              Contact Us
+            </Button>
+          </Stack>
+        </Container>
+      </Box>
+    </Box>
   );
 }};
 
@@ -2263,10 +1681,10 @@ export default {page_name};
         
         # Check if code has invalid function types (function or Function)
         if re.search(r':\s*(function|Function)\s*;', code, re.IGNORECASE):
-            print(f"  ⚠️  Found invalid function type syntax in {component_name}")
-            print(f"  🔧 Auto-fixing function types...")
+            print(f"  âš ï¸  Found invalid function type syntax in {component_name}")
+            print(f"  ðŸ”§ Auto-fixing function types...")
             code = self._fix_function_types_in_component(code, component_name)
-            print(f"  ✅ Fixed function types in {component_name}")
+            print(f"   Fixed function types in {component_name}")
         
         # Check if code has required props (interface without ?)
         interface_pattern = rf'interface\s+{component_name}Props\s*\{{([^}}]+)\}}'
@@ -2278,15 +1696,15 @@ export default {page_name};
             required_props = re.findall(r'(\w+)(?!\?)\s*:\s*[^;]+;', interface_body)
             
             if required_props:
-                print(f"  ⚠️  Found required props in {component_name}: {required_props}")
-                print(f"  🔧 Auto-fixing to make props optional...")
+                print(f"  âš ï¸  Found required props in {component_name}: {required_props}")
+                print(f"  ðŸ”§ Auto-fixing to make props optional...")
                 code = self._fix_required_props_in_component(code, component_name)
-                print(f"  ✅ Fixed required props in {component_name}")
+                print(f"   Fixed required props in {component_name}")
         
         return code
     
     def _generate_basic_component_template(self, component: ComponentSpec) -> str:
-        """Generate basic component template as fallback with OPTIONAL props"""
+        """Generate MUI-based component template as fallback with OPTIONAL props"""
         # Validate component attributes with safe defaults
         if not component:
             component_name = "Component"
@@ -2301,8 +1719,9 @@ export default {page_name};
         has_props = bool(component and component.props)
         
         if component and component.props:
-            # CRITICAL: Make ALL props optional with ? mark
+            # CRITICAL: Make ALL props optional with ? mark and include children
             props_list = [f"  {key}?: {value};" for key, value in component.props.items()]
+            props_list.append("  children?: React.ReactNode;")
             props_interface = f"""
 interface {component_name}Props {{
 {chr(10).join(props_list)}
@@ -2314,18 +1733,47 @@ interface {component_name}Props {{
             for key, value in component.props.items():
                 default_val = self._get_default_value(value)
                 default_values.append(f"{key} = {default_val}")
+            default_values.append("children")
             props_param = f"{{ {', '.join(default_values)} }}"
         else:
-            props_param = "{}"
+            props_interface = f"""
+interface {component_name}Props {{
+  children?: React.ReactNode;
+}}
+
+"""
+            props_param = "{ children }"
         
         return f"""import React from 'react';
+import {{ Box, Typography, Card, CardContent, Button }} from '@mui/material';
+import {{ Star }} from '@mui/icons-material';
 
-{props_interface}const {component_name}: React.FC{f'<{component_name}Props>' if has_props else ''} = ({props_param}) => {{
+{props_interface}const {component_name}: React.FC<{component_name}Props> = ({props_param}) => {{
   return (
-    <div className="{(component_name or '').lower()}">
-      <h2>{component_name}</h2>
-      <p>{component_desc}</p>
-    </div>
+    <Card sx={{{{ p: 3, borderRadius: 3, boxShadow: 2, textAlign: 'center' }}}}>
+      <CardContent>
+        <Box sx={{{{ color: 'primary.main', mb: 2, fontSize: '2.5rem' }}}}>
+          <Star />
+        </Box>
+        <Typography variant="h4" sx={{{{ mb: 2, fontWeight: 600, color: 'primary.main' }}}}>
+          {component_name}
+        </Typography>
+        <Typography variant="body1" sx={{{{ mb: 3, color: 'text.secondary', lineHeight: 1.6 }}}}>
+          {component_desc}
+        </Typography>
+        {{children && (
+          <Box sx={{{{ mt: 3 }}}}>
+            {{children}}
+          </Box>
+        )}}
+        <Button 
+          variant="contained" 
+          sx={{{{ mt: 2, px: 3, py: 1 }}}}
+        >
+          View Details
+        </Button>
+      </CardContent>
+    </Card>
   );
 }};
 
@@ -3088,15 +2536,15 @@ Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
 
 ```
 .
-├── src/
-│   ├── components/     # Reusable React components
-│   ├── pages/          # Page components
-│   ├── App.tsx         # Main app component with routing
-│   └── index.tsx       # Entry point
-{'├── api/              # Backend API handlers' if plan.backend_logic else ''}
-{'├── tests/            # Backend tests' if plan.backend_logic else ''}
-{'├── server.js         # Express server' if plan.backend_logic else ''}
-└── package.json
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ components/     # Reusable React components
+â”‚   â”œâ”€â”€ pages/          # Page components
+â”‚   â”œâ”€â”€ App.tsx         # Main app component with routing
+â”‚   â””â”€â”€ index.tsx       # Entry point
+{'â”œâ”€â”€ api/              # Backend API handlers' if plan.backend_logic else ''}
+{'â”œâ”€â”€ tests/            # Backend tests' if plan.backend_logic else ''}
+{'â”œâ”€â”€ server.js         # Express server' if plan.backend_logic else ''}
+â””â”€â”€ package.json
 ```
 
 ## Generated by AMAR
@@ -3179,7 +2627,7 @@ This application was generated automatically based on the following plan:
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
-        print(f"📁 Files saved to: {base_path}")
+        print(f"ðŸ“ Files saved to: {base_path}")
         print(f"   You can find your generated project at this location!")
         
         return base_path
@@ -3354,10 +2802,10 @@ This application was generated automatically based on the following plan:
             try:
                 # Install dependencies first (if package.json exists)
                 if os.path.exists('package.json'):
-                    print("🔍 BUILDER: Installing dependencies...")
+                    print("ðŸ” BUILDER: Installing dependencies...")
                     # Clean install to avoid dependency conflicts
                     if os.path.exists('node_modules'):
-                        print("🔍 BUILDER: Cleaning existing node_modules...")
+                        print("ðŸ” BUILDER: Cleaning existing node_modules...")
                         subprocess.run(['rm', '-rf', 'node_modules'], capture_output=True, timeout=60)
                     if os.path.exists('package-lock.json'):
                         subprocess.run(['rm', '-f', 'package-lock.json'], capture_output=True, timeout=60)
@@ -3373,9 +2821,9 @@ This application was generated automatically based on the following plan:
                     
                     if npm_result.returncode != 0:
                         error_msg = f"npm install failed: {npm_result.stderr}"
-                        print(f"❌ BUILDER: {error_msg}")
+                        print(f" BUILDER: {error_msg}")
                         raise RuntimeError(error_msg)
-                    print("✓ BUILDER: Dependencies installed successfully")
+                    print("âœ“ BUILDER: Dependencies installed successfully")
                 
                 # Run tests using npm test (which runs react-scripts test)
                 test_result = subprocess.run(
@@ -3492,7 +2940,7 @@ This application was generated automatically based on the following plan:
                 duration_ms=test_results.execution_time_ms
             )
         except Exception as e:
-            # Don't let logging errors break the main flow
+            # Do not let logging errors break the main flow
             print(f"Failed to log test results: {e}")
     
     def build_and_test_project(self, plan: Plan, session_id: str) -> AgentResponse:
@@ -3574,7 +3022,7 @@ This application was generated automatically based on the following plan:
             if os.path.exists(project_dir) and project_dir.startswith(tempfile.gettempdir()):
                 shutil.rmtree(project_dir)
         except Exception as e:
-            # Don't let cleanup errors break the main flow
+            # Do not let cleanup errors break the main flow
             print(f"Failed to cleanup directory {project_dir}: {e}")
     
     def self_heal(
@@ -3886,7 +3334,7 @@ Return ONLY the corrected TypeScript React component code, no explanations or ma
         """
         Regenerate generic file with error context
         
-        Used for files that don't fit specific categories
+        Used for files that do not fit specific categories
         """
         error_summary = error_context.get('error_summary', '')
         test_failures = error_context.get('test_failures', [])
@@ -3943,7 +3391,7 @@ Return ONLY the corrected code, no explanations or markdown formatting.
         """
         failing_files = {}
         
-        # If no specific errors, return empty (can't determine failing files)
+        # If no specific errors, return empty (cannot determine failing files)
         if not test_results.errors:
             return failing_files
         
@@ -4034,6 +3482,167 @@ Return ONLY the corrected code, no explanations or markdown formatting.
             errors=[error_msg],
             execution_time_ms=execution_time
         )
+    def _validate_mui_compliance(self, code: str, file_type: str) -> bool:
+        """
+        Validate that generated code uses Material-UI components and meets quality standards
+        
+        Args:
+            code: Generated code to validate
+            file_type: Type of file ('page', 'component', 'app')
+            
+        Returns:
+            bool: True if code meets MUI compliance standards
+        """
+        if not code:
+            return False
+        
+        # Check for MUI imports
+        has_mui_imports = any(import_line in code for import_line in [
+            'from \'@mui/material\'',
+            'from "@mui/material"',
+            'from \'@mui/icons-material\'',
+            'from "@mui/icons-material"'
+        ])
+        
+        if not has_mui_imports:
+            print(f" MUI Validation Failed: No MUI imports found")
+            return False
+        
+        # Check for forbidden plain HTML elements
+        forbidden_elements = ['<div', '<h1', '<h2', '<h3', '<h4', '<h5', '<h6', '<p>', '<button', '<form', '<input', '<nav', '<header', '<footer', '<section', '<article']
+        forbidden_found = [elem for elem in forbidden_elements if elem in code]
+        
+        if forbidden_found:
+            print(f" MUI Validation Failed: Found forbidden HTML elements: {forbidden_found}")
+            return False
+        
+        # Check for required MUI components
+        required_mui_components = ['<Box', '<Typography', '<Container']
+        mui_components_found = [comp for comp in required_mui_components if comp in code]
+        
+        if len(mui_components_found) < 2:
+            print(f" MUI Validation Failed: Insufficient MUI components found: {mui_components_found}")
+            return False
+        
+        # Check for ThemeProvider in App.tsx
+        if file_type == 'app':
+            if 'ThemeProvider' not in code or 'createTheme' not in code:
+                print(f" MUI Validation Failed: App.tsx missing ThemeProvider setup")
+                return False
+        
+        # Check content length (should be substantial, not minimal)
+        if file_type == 'page':
+            # Count words in JSX content (rough estimate)
+            jsx_content = code.split('return (')[1] if 'return (' in code else code
+            word_count = len(jsx_content.split())
+            if word_count < 200:  # Minimum word count for pages
+                print(f" MUI Validation Failed: Page content too minimal ({word_count} words)")
+                return False
+        
+        # Check for sx prop usage (indicates proper MUI styling)
+        if 'sx={{' not in code and 'sx={' not in code:
+            print(f" MUI Validation Failed: No sx prop styling found")
+            return False
+        
+        print(f" MUI Validation Passed: {file_type} meets all compliance standards")
+        return True
+    
+    def _regenerate_with_stricter_prompt(self, original_code: str, file_type: str, spec: any, plan: Plan, session_id: str) -> str:
+        """
+        Regenerate code with stricter MUI enforcement when validation fails
+        
+        Args:
+            original_code: The non-compliant code
+            file_type: Type of file being regenerated
+            spec: Page or Component specification
+            plan: Full plan object
+            session_id: Session identifier
+            
+        Returns:
+            str: Regenerated code that should be MUI compliant
+        """
+        print(f"ðŸ”„ Regenerating {file_type} with stricter MUI enforcement...")
+        
+        stricter_prompt = f"""
+ EMERGENCY: PREVIOUS CODE FAILED MUI VALIDATION
+
+The previous code was REJECTED for not using Material-UI components.
+You MUST fix this immediately or the project will fail.
+
+CRITICAL FAILURES DETECTED:
+- Plain HTML elements found (div, h1, p, button, etc.)
+- Missing MUI imports
+- Insufficient MUI component usage
+- Missing sx prop styling
+
+MANDATORY FIXES:
+1. Import ONLY from @mui/material and @mui/icons-material
+2. Use ONLY MUI components: Box, Typography, Button, Card, Container, Grid
+3. NO plain HTML elements allowed
+4. Use sx prop for ALL styling
+5. Include rich, professional content (300+ words)
+6. Do NOT use template literals/backticks (`). Use quoted strings only.
+
+EXAMPLE CORRECT STRUCTURE:
+```typescript
+import React from 'react';
+import {{ Box, Container, Typography, Button, Card, CardContent }} from '@mui/material';
+import {{ Star }} from '@mui/icons-material';
+
+const Component = () => {{
+  return (
+    <Container maxWidth="lg">
+      <Box sx={{{{ py: 8, textAlign: 'center' }}}}>
+        <Typography variant="h1" sx={{{{ mb: 3, fontWeight: 700, color: 'primary.main' }}}}>
+          Professional Title
+        </Typography>
+        <Typography variant="body1" sx={{{{ mb: 4, lineHeight: 1.6 }}}}>
+          Rich, engaging content that provides real value...
+        </Typography>
+        <Button variant="contained" sx={{{{ px: 4, py: 1.5 }}}}>
+          Call to Action
+        </Button>
+      </Box>
+    </Container>
+  );
+}};
+```
+
+NOW REGENERATE THE {file_type.upper()} WITH PERFECT MUI COMPLIANCE.
+"""
+        
+        try:
+            if file_type == 'page':
+                regenerated_code = self._call_llm(stricter_prompt + f"\nPage: {spec.name}\nDescription: {spec.description}", temperature=0.1)
+            elif file_type == 'component':
+                regenerated_code = self._call_llm(stricter_prompt + f"\nComponent: {spec.name}\nDescription: {spec.description}", temperature=0.1)
+            else:
+                regenerated_code = self._call_llm(stricter_prompt, temperature=0.1)
+            
+            # Clean and validate regenerated code
+            regenerated_code = self._extract_code_from_response(regenerated_code)
+            
+            if self._validate_mui_compliance(regenerated_code, file_type):
+                print(f" Regeneration successful: {file_type} now MUI compliant")
+                return regenerated_code
+            else:
+                print(f" Regeneration failed: {file_type} still not MUI compliant, using fallback")
+                # Use fallback template as last resort
+                if file_type == 'page':
+                    return self._generate_basic_page_template(spec)
+                elif file_type == 'component':
+                    return self._generate_basic_component_template(spec)
+                else:
+                    return original_code
+                    
+        except Exception as e:
+            print(f" Regeneration error: {e}, using fallback")
+            if file_type == 'page':
+                return self._generate_basic_page_template(spec)
+            elif file_type == 'component':
+                return self._generate_basic_component_template(spec)
+            else:
+                return original_code
 
 
 class MaxRetriesExceeded(Exception):

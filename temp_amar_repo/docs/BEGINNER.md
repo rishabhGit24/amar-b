@@ -7,6 +7,7 @@
 ## 🎯 What Does Phase 1 Do?
 
 Imagine you have a huge library of programming books, tutorials, and documentation. When you ask a question like "How do I prevent SQL injection?", you'd normally have to:
+
 1. Search through all the books
 2. Read multiple pages
 3. Understand the content
@@ -17,6 +18,7 @@ Imagine you have a huge library of programming books, tutorials, and documentati
 ### Simple Explanation
 
 Phase 1 is like a **smart search engine** that:
+
 1. **Reads** your documentation (PDFs, text files, markdown)
 2. **Understands** the meaning (not just keywords)
 3. **Finds** the most relevant information
@@ -25,6 +27,7 @@ Phase 1 is like a **smart search engine** that:
 ### Technical Explanation
 
 Phase 1 is a **RAG (Retrieval-Augmented Generation) system** that:
+
 1. **Ingests** documents and breaks them into chunks
 2. **Converts** text into mathematical vectors (embeddings)
 3. **Indexes** vectors using FAISS with HNSW algorithm
@@ -35,6 +38,7 @@ Phase 1 is a **RAG (Retrieval-Augmented Generation) system** that:
 ## 🏗️ How Does It Work? (Simple Version)
 
 ### Step 1: Loading Documents
+
 ```
 Your Documents (PDFs, TXT, MD)
          ↓
@@ -44,6 +48,7 @@ Your Documents (PDFs, TXT, MD)
 ```
 
 ### Step 2: Breaking Into Chunks
+
 ```
 Long Document
          ↓
@@ -51,9 +56,11 @@ Long Document
          ↓
 Small Pieces (300 words each)
 ```
+
 **Why?** Smaller pieces are easier to search and more precise.
 
 ### Step 3: Converting to Numbers
+
 ```
 Text: "Prevent SQL injection"
          ↓
@@ -61,15 +68,19 @@ Text: "Prevent SQL injection"
          ↓
 Numbers: [0.23, -0.45, 0.67, ...] (768 numbers)
 ```
+
 **Why?** Computers understand numbers better than words. Similar meanings = similar numbers.
 
 ### Step 4: Indexing (Making it Fast)
+
 ```
 All Chunks → [FAISS HNSW Index] → Fast Search Database
 ```
+
 **Why?** HNSW (Hierarchical Navigable Small World) makes searching millions of chunks super fast (<50ms).
 
 ### Step 5: Searching
+
 ```
 Your Question: "How to prevent SQL injection?"
          ↓
@@ -85,6 +96,7 @@ Your Question: "How to prevent SQL injection?"
 ```
 
 ### Step 6: Generating Answer
+
 ```
 Best Chunks + Your Question
          ↓
@@ -96,26 +108,31 @@ Complete Answer with Sources
 ## 🔧 Key Technologies Explained
 
 ### 1. FAISS (Facebook AI Similarity Search)
+
 **What**: A library for fast similarity search
 **Why**: Searches millions of vectors in milliseconds
 **Analogy**: Like Google search, but for meanings instead of keywords
 
 ### 2. HNSW (Hierarchical Navigable Small World)
+
 **What**: A graph-based indexing algorithm
 **Why**: Makes search 100x faster than brute force
 **Analogy**: Like a highway system - you don't check every road, just the main routes
 
 ### 3. Embeddings (Vector Representations)
+
 **What**: Converting text to numbers that capture meaning
 **Why**: "SQL injection" and "SQL vulnerability" have similar vectors
 **Model Used**: all-mpnet-base-v2 (768 dimensions)
 
 ### 4. Cross-Encoder Reranking
+
 **What**: A second-pass check for precision
 **Why**: Improves relevance from 75% to 85%
 **Analogy**: Like double-checking your work
 
 ### 5. Chunking
+
 **What**: Breaking documents into 300-token pieces
 **Why**: Better precision, faster search
 **Overlap**: 100 tokens to preserve context
@@ -123,11 +140,13 @@ Complete Answer with Sources
 ## 📊 Current Performance
 
 ### What We Measure
+
 - **Relevance**: How accurate are the results? (Currently: 85%)
 - **Accuracy**: Do we find the right document? (Currently: 100%)
 - **Speed**: How fast? (Currently: <50ms search)
 
 ### Test Results
+
 ```
 Question: "How to prevent SQL injection?"
 ✓ Found correct document: security_guide.md
@@ -138,18 +157,22 @@ Question: "How to prevent SQL injection?"
 ## 🎯 Phase 1 vs Phase 2
 
 ### Phase 1: Build from Scratch (CURRENT)
+
 **What it does:**
+
 - Answers questions about web development
 - Finds relevant documentation
 - Provides code examples
 - Explains best practices
 
 **Use cases:**
+
 - "How do I prevent SQL injection?"
 - "What are microservices best practices?"
 - "Show me parameterized query examples"
 
 **Output:**
+
 - Text answers with sources
 - Code snippets
 - Explanations
@@ -157,6 +180,7 @@ Question: "How to prevent SQL injection?"
 ### Phase 2: Migration & Transformation (FUTURE)
 
 **What it will do:**
+
 - Analyze existing codebases
 - Convert old code to modern frameworks
 - Migrate databases
@@ -164,6 +188,7 @@ Question: "How to prevent SQL injection?"
 - Deploy applications
 
 **Use cases:**
+
 - "Convert this PHP code to Node.js"
 - "Migrate my MySQL database to PostgreSQL"
 - "Update this jQuery app to React"
@@ -207,6 +232,7 @@ User: Gets converted code + tests + deployment config
 ## 🗂️ Project Structure
 
 ### Main Working Files (Root Directory)
+
 ```
 amar-phase1/
 ├── rag_retriever.py          # Core RAG system
@@ -219,6 +245,7 @@ amar-phase1/
 ```
 
 ### Documentation (docs/ folder)
+
 ```
 docs/
 ├── BEGINNER.md              # This file
@@ -229,6 +256,7 @@ docs/
 ```
 
 ### Tests (tests/ folder)
+
 ```
 tests/
 ├── test_pipeline.py         # Component tests
@@ -237,26 +265,32 @@ tests/
 └── upgrade_to_95_percent.py # Upgrade script
 ```
 
-## 🚀 How to Use (Simple Steps)
+## How to Use (Simple Steps)
 
 ### Step 1: Install
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### Step 2: Add API Key
+
 Edit `.env` file:
+
 ```
 GEMINI_API_KEY=your_key_here
 ```
 
 ### Step 3: Run Demo
+
 ```bash
 python demo.py
 ```
 
 ### Step 4: Ask Questions
+
 The demo will ask questions like:
+
 - "How to prevent SQL injection?"
 - "How to migrate to microservices?"
 
@@ -265,20 +299,23 @@ And show you answers with sources!
 ## 💡 Real-World Example
 
 ### Input (Your Question)
+
 ```
 "How do I prevent SQL injection in Node.js?"
 ```
 
 ### What Happens Behind the Scenes
+
 1. **Convert question to vector**: [0.23, -0.45, 0.67, ...]
 2. **Search FAISS index**: Find similar chunks
 3. **Rerank results**: Pick best 3 chunks
 4. **Send to Gemini**: Generate answer
 
 ### Output (What You Get)
+
 ```
 Answer:
-To prevent SQL injection in Node.js, always use parameterized 
+To prevent SQL injection in Node.js, always use parameterized
 queries instead of string concatenation.
 
 Example:
@@ -297,23 +334,29 @@ Confidence: 91%
 ## 🎓 Key Concepts Explained
 
 ### 1. Vector Embeddings
+
 **Simple**: Converting words to numbers that capture meaning
 **Example**:
+
 - "car" → [0.8, 0.2, 0.1]
 - "automobile" → [0.79, 0.21, 0.11] (very similar!)
 - "banana" → [0.1, 0.9, 0.3] (very different!)
 
 ### 2. Similarity Search
+
 **Simple**: Finding things that are similar in meaning
 **Example**:
+
 - Query: "prevent SQL injection"
 - Similar: "stop SQL attacks", "secure against SQL injection"
 - Not similar: "create database table"
 
 ### 3. Chunking
+
 **Simple**: Breaking big documents into small pieces
 **Why**: Easier to find exact information
 **Example**:
+
 ```
 Big Document (5000 words)
          ↓
@@ -324,6 +367,7 @@ Chunk 3 (300 words): About CSRF protection
 ```
 
 ### 4. Reranking
+
 **Simple**: Double-checking to pick the best results
 **Why**: First search is fast but approximate, reranking is precise
 **Analogy**: Like filtering search results by "most relevant"
@@ -331,17 +375,20 @@ Chunk 3 (300 words): About CSRF protection
 ## 📈 Performance Metrics Explained
 
 ### Relevance (85%)
+
 **What**: How accurate are the results?
 **Good**: 80%+
 **Excellent**: 95%+
 **Current**: 85% (good, working on 95%)
 
 ### Document Accuracy (100%)
+
 **What**: Do we find the right document?
 **Current**: 100% (perfect!)
 **Meaning**: Always retrieves the correct source
 
 ### Speed (<50ms)
+
 **What**: How fast is the search?
 **Current**: <50ms (very fast!)
 **Meaning**: Almost instant results
@@ -349,6 +396,7 @@ Chunk 3 (300 words): About CSRF protection
 ## 🔮 Future: Phase 2 Integration
 
 ### Phase 1 Role in Phase 2
+
 Phase 1 becomes the **"brain"** that Phase 2 consults:
 
 ```
@@ -372,6 +420,7 @@ Phase 1 becomes the **"brain"** that Phase 2 consults:
 **User Request**: "Convert my PHP website to Node.js"
 
 **Phase 2 Process**:
+
 1. Analyze PHP code structure
 2. **Ask Phase 1**: "How to structure Node.js API?"
 3. **Phase 1 responds**: Best practices, examples
@@ -388,9 +437,11 @@ Phase 1 becomes the **"brain"** that Phase 2 consults:
 ## 🎯 Summary for Beginners
 
 ### What is Phase 1?
+
 A smart search system that understands technical documentation and answers your programming questions.
 
 ### What does it use?
+
 - FAISS: Fast search
 - HNSW: Smart indexing
 - Embeddings: Understanding meaning
@@ -398,14 +449,17 @@ A smart search system that understands technical documentation and answers your 
 - Gemini: Answer generation
 
 ### How well does it work?
+
 - 85% relevance (good, improving to 95%)
 - 100% accuracy (perfect!)
 - <50ms speed (very fast!)
 
 ### What's next?
+
 Phase 2 will use Phase 1 as its knowledge base to automatically convert, migrate, and deploy applications.
 
 ### How do I use it?
+
 ```bash
 pip install -r requirements.txt
 python demo.py
